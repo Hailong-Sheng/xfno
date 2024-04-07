@@ -39,7 +39,7 @@ class Geometry():
         """ Compute the intersection between the segement x0x1 and the domain boundary. """
         x0 = x0.clone()
         x1 = x1.clone()
-        x = torch.zeros(x0.shape)
+        x = -10*torch.ones(x0.shape)
         
         tol = 1e-4
         loc = self.location(x0, p)

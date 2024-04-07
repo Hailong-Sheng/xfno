@@ -1,14 +1,16 @@
+import os
 import torch
 import numpy as np
 import pandas as pd
 
 class TrSet():
-    def __init__(self, geo, mesh, re, u0_inlet, dtype):
+    def __init__(self, geo, mesh, re, u0_inlet, dtype, device, load_loss_weight):
         self.geo = geo
         self.mesh = mesh
         self.re = re
         self.u0_inlet = u0_inlet
         self.dtype = dtype
+        self.device = device
 
         self.nu = 1.0/self.re
 
@@ -22,11 +24,24 @@ class TrSet():
         for p in range(self.parm_size):
             tmp[p,0,0,:] = self.u0_inlet[p]
         self.parm = torch.cat([self.parm,tmp],1)
+
         self.mask = (self.mesh.c_loc==1).reshape(self.parm_size,1,self.nx[0],self.nx[1])
         self.mask = self.mask.clone().to(self.dtype)
 
-        """ boundary value on the cell face (if cell face is located on the boundary) """
+        self.generate_boundary_value()
+
+        # load or calculate weight for calculating loss fucniton
+        if load_loss_weight:
+            self.load_loss_weight()
+        else:
+            self.cal_loss_weight_momentum()
+            self.cal_loss_weight_continuity()
+            self.save_loss_weight()
+    
+    def generate_boundary_value(self):
         print('Generating boundary value ...')
+
+        # boundary value on the cell face (if cell face is located on the boundary)
         self.mesh.fw_v0 = torch.zeros(self.parm_size,self.mesh.c_size)
         self.mesh.fe_v0 = torch.zeros(self.parm_size,self.mesh.c_size)
         self.mesh.fs_v0 = torch.zeros(self.parm_size,self.mesh.c_size)
@@ -58,7 +73,7 @@ class TrSet():
         self.mesh.fes_v1 = torch.zeros(self.parm_size,self.mesh.c_size)
         self.mesh.fen_v1 = torch.zeros(self.parm_size,self.mesh.c_size)
         
-        """ boundary value on the interpolation node (if node is located on the boundary) """
+        # boundary value on the interpolation node (if node is located on the boundary)
         self.mesh.intp_v = torch.zeros(self.parm_size,self.mesh.c_size,self.mesh.intp_n_size,3)
         for p in range(self.parm_size):
             for i in range(self.nx[0]):
@@ -81,13 +96,15 @@ class TrSet():
             self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
         self.v2 = (self.mesh.intp_v[:,:,:,2].permute(0,2,1)).reshape(
             self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
+
+    def cal_loss_weight_momentum(self):
+        print('Generating weight for evaluating the residual of momentum equation ...')
         
-        """ right hand side """
+        # right hand side
         self.r0 = torch.zeros(self.parm_size,1,self.nx[0],self.nx[1])
         self.r1 = torch.zeros(self.parm_size,1,self.nx[0],self.nx[1])
-        self.r2 = torch.zeros(self.parm_size,1,self.nx[0],self.nx[1])
 
-        """ weight for calculating the value of loss function """
+        # weight for calculating the value of loss function
         self.wei0_u0_diff = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
         self.wei0_u0_conv_u0 = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
         self.wei0_u0_conv_u1 = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
@@ -96,11 +113,8 @@ class TrSet():
         self.wei1_u1_conv_u0 = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
         self.wei1_u1_conv_u1 = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
         self.wei1_p = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
-        self.wei2_u0 = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
-        self.wei2_u1 = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
-        self.wei2_p = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
-        
-        """ interpolation coefficients for regular unit """
+
+        # interpolation coefficients for regular unit
         self.re_c = torch.zeros(4,self.mesh.intp_n_size)
         self.re_c_x0 = torch.zeros(4,self.mesh.intp_n_size)
         self.re_c_x1 = torch.zeros(4,self.mesh.intp_n_size)
@@ -132,10 +146,9 @@ class TrSet():
             if flag: break
         
         # momentum equation
-        print('Generating weight for evaluating the residual of momentum equation ...')
         for p in range(self.parm_size):
             print('for parameter: c = [{:.2f},{:.2f}], u_i = {:.2f} ...'.format(
-                self.geo.center[p,0],self.geo.center[p,1],self.u0_inlet[p]))
+                  self.geo.center[p,0],self.geo.center[p,1],self.u0_inlet[p]))
             for i in range(self.nx[0]):
                 for j in range(self.nx[1]):
                     m = i*self.nx[1] + j
@@ -236,7 +249,7 @@ class TrSet():
                     
                     # west south face
                     tol = 1e-4
-                    if mesh.fws_l[p,m]>tol:
+                    if self.mesh.fws_l[p,m]>tol:
                         intp_n_size = self.mesh.intp_n_size
                         ji = [0,1,2,3,4,5,6,7,8]
                         xi = self.mesh.intp_x[p,m,ji,:]
@@ -248,7 +261,7 @@ class TrSet():
                         self.wei1_u1_diff[p,ji[n],i,j] += diff * self.mesh.fws_l[p,m]
 
                     # west north face
-                    if mesh.fwn_l[p,m]>tol:
+                    if self.mesh.fwn_l[p,m]>tol:
                         intp_n_size = self.mesh.intp_n_size
                         ji = [0,1,2,3,4,5,6,7,8]
                         xi = self.mesh.intp_x[p,m,ji,:]
@@ -260,7 +273,7 @@ class TrSet():
                         self.wei1_u1_diff[p,ji[n],i,j] += diff * self.mesh.fwn_l[p,m]
                     
                     # east south face
-                    if mesh.fes_l[p,m]>tol:
+                    if self.mesh.fes_l[p,m]>tol:
                         intp_n_size = self.mesh.intp_n_size
                         ji = [0,1,2,3,4,5,6,7,8]
                         xi = self.mesh.intp_x[p,m,ji,:]
@@ -272,7 +285,7 @@ class TrSet():
                         self.wei1_u1_diff[p,ji[n],i,j] += diff * self.mesh.fes_l[p,m]
                     
                     # east north face
-                    if mesh.fen_l[p,m]>tol:
+                    if self.mesh.fen_l[p,m]>tol:
                         intp_n_size = self.mesh.intp_n_size
                         ji = [0,1,2,3,4,5,6,7,8]
                         xi = self.mesh.intp_x[p,m,ji,:]
@@ -285,13 +298,13 @@ class TrSet():
 
                     # presure dp/dx
                     intp_n_size = 2
-                    if mesh.nw_loc[p,m]==1 and mesh.ne_loc[p,m]==1:
+                    if self.mesh.nw_loc[p,m]==1 and self.mesh.ne_loc[p,m]==1:
                         ji = [1,7]; xi = self.mesh.intp_x[p,m,ji,:]
-                    if mesh.nw_loc[p,m]!=1:
+                    if self.mesh.nw_loc[p,m]!=1:
                         ji = [4,7]; xi = self.mesh.intp_x[p,m,ji,:]
-                    if mesh.ne_loc[p,m]!=1:
+                    if self.mesh.ne_loc[p,m]!=1:
                         ji = [1,4]; xi = self.mesh.intp_x[p,m,ji,:]
-                    if i==mesh.nx[0]-1:
+                    if i==self.mesh.nx[0]-1:
                         ji = [1,4]; xi = self.mesh.intp_x[p,m,ji,:]
                     
                     # west face
@@ -343,11 +356,11 @@ class TrSet():
 
                     # presure dp/dy
                     intp_n_size = 2
-                    if mesh.ns_loc[p,m]==1 and mesh.nn_loc[p,m]==1:
+                    if self.mesh.ns_loc[p,m]==1 and self.mesh.nn_loc[p,m]==1:
                         ji = [3,5]; xi = self.mesh.intp_x[p,m,ji,:]
-                    if mesh.ns_loc[p,m]!=1:
+                    if self.mesh.ns_loc[p,m]!=1:
                         ji = [4,5]; xi = self.mesh.intp_x[p,m,ji,:]
-                    if mesh.nn_loc[p,m]!=1:
+                    if self.mesh.nn_loc[p,m]!=1:
                         ji = [3,4]; xi = self.mesh.intp_x[p,m,ji,:]
                     
                     # west face
@@ -394,9 +407,18 @@ class TrSet():
                         c, c_x0, c_x1 = self.intp_coef_1(xi, self.mesh.fen_x[p,m,:])
                         for n in range(intp_n_size):
                             self.wei1_p[p,ji[n],i,j] += c[n]*self.mesh.fen_n[p,m,1] * self.mesh.fen_l[p,m]
-        
-        # continuity equation
+    
+    def cal_loss_weight_continuity(self):
         print('Generating weight for evaluating the residual of continuity equation ...')
+        
+        # right hand side
+        self.r2 = torch.zeros(self.parm_size,1,self.nx[0],self.nx[1])
+
+        # weight for calculating the value of loss function
+        self.wei2_u0 = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
+        self.wei2_u1 = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
+        self.wei2_p = torch.zeros(self.parm_size,self.mesh.intp_n_size,self.nx[0],self.nx[1])
+
         for p in range(self.parm_size):
             print('for parameter: c = [{:.2f},{:.2f}], u_i = {:.2f}'.format(
                 self.geo.center[p,0],self.geo.center[p,1],self.u0_inlet[p]))
@@ -551,6 +573,41 @@ class TrSet():
         c_x1 = c_x1.clone().to(self.dtype)
         return c, c_x0, c_x1
 
+    def load_loss_weight(self):
+        self.r0 = torch.load('./loss_weight/r0.pt')
+        self.r1 = torch.load('./loss_weight/r1.pt')
+        self.r2 = torch.load('./loss_weight/r2.pt')
+
+        self.wei0_u0_diff = torch.load('./loss_weight/wei0_u0_diff.pt')
+        self.wei0_u0_conv_u0 = torch.load('./loss_weight/wei0_u0_conv_u0.pt')
+        self.wei0_u0_conv_u1 = torch.load('./loss_weight/wei0_u0_conv_u1.pt')
+        self.wei0_p = torch.load('./loss_weight/wei0_p.pt')
+        self.wei1_u1_diff = torch.load('./loss_weight/wei1_u1_diff.pt')
+        self.wei1_u1_conv_u0 = torch.load('./loss_weight/wei1_u1_conv_u0.pt')
+        self.wei1_u1_conv_u1 = torch.load('./loss_weight/wei1_u1_conv_u1.pt')
+        self.wei1_p = torch.load('./loss_weight/wei1_p.pt')
+        self.wei2_u0 = torch.load('./loss_weight/wei2_u0.pt')
+        self.wei2_u1 = torch.load('./loss_weight/wei2_u1.pt')
+        self.wei2_p = torch.load('./loss_weight/wei2_p.pt')
+        
+    def save_loss_weight(self):
+        os.makedirs('./loss_weight', exist_ok=True)
+        torch.save(self.r0, './loss_weight/r0.pt')
+        torch.save(self.r1, './loss_weight/r1.pt')
+        torch.save(self.r2, './loss_weight/r2.pt')
+        
+        torch.save(self.wei0_u0_diff, './loss_weight/wei0_u0_diff.pt')
+        torch.save(self.wei0_u0_conv_u0, './loss_weight/wei0_u0_conv_u0.pt')
+        torch.save(self.wei0_u0_conv_u1, './loss_weight/wei0_u0_conv_u1.pt')
+        torch.save(self.wei0_p, './loss_weight/wei0_p.pt')
+        torch.save(self.wei1_u1_diff, './loss_weight/wei1_u1_diff.pt')
+        torch.save(self.wei1_u1_conv_u0, './loss_weight/wei1_u1_conv_u0.pt')
+        torch.save(self.wei1_u1_conv_u1, './loss_weight/wei1_u1_conv_u1.pt')
+        torch.save(self.wei1_p, './loss_weight/wei1_p.pt')
+        torch.save(self.wei2_u0, './loss_weight/wei2_u0.pt')
+        torch.save(self.wei2_u1, './loss_weight/wei2_u1.pt')
+        torch.save(self.wei2_p, './loss_weight/wei2_p.pt')
+        
     def to(self, device):
         self.device = device
 
@@ -576,6 +633,32 @@ class TrSet():
         self.r0 = self.r0.to(self.device)
         self.r1 = self.r1.to(self.device)
         self.r2 = self.r2.to(self.device)
+    
+    def __getitem__(self, idx):
+        data = {}
+        data['parm'] = self.parm[idx].to(self.device)
+        data['mask'] = self.mask[idx].to(self.device)
+        data['wei0_u0_diff'] = self.wei0_u0_diff[idx].to(self.device)
+        data['wei0_u0_conv_u0'] = self.wei0_u0_conv_u0[idx].to(self.device)
+        data['wei0_u0_conv_u1'] = self.wei0_u0_conv_u1[idx].to(self.device)
+        data['wei0_p'] = self.wei0_p[idx].to(self.device)
+        data['wei1_u1_diff'] = self.wei1_u1_diff[idx].to(self.device)
+        data['wei1_u1_conv_u0'] = self.wei1_u1_conv_u0[idx].to(self.device)
+        data['wei1_u1_conv_u1'] = self.wei1_u1_conv_u1[idx].to(self.device)
+        data['wei1_p'] = self.wei1_p[idx].to(self.device)
+        data['wei2_u0'] = self.wei2_u0[idx].to(self.device)
+        data['wei2_u1'] = self.wei2_u1[idx].to(self.device)
+        data['wei2_p'] = self.wei2_p[idx].to(self.device)
+        data['v0'] = self.v0[idx].to(self.device)
+        data['v1'] = self.v1[idx].to(self.device)
+        data['v2'] = self.v2[idx].to(self.device)
+        data['r0'] = self.r0[idx].to(self.device)
+        data['r1'] = self.r1[idx].to(self.device)
+        data['r2'] = self.r2[idx].to(self.device)
+        return data
+    
+    def __len__(self):
+        return self.parm.shape[0]
 
 class TeSet():
     def __init__(self, file_name, parm_size, nx, dtype):
@@ -606,8 +689,8 @@ class TeSet():
         self.x1 = self.x1.to(self.device)
         self.c_a = self.c_a.to(self.device)
         self.u0_inlet = self.u0_inlet.to(self.device)
-        self.parm = self.parm.to(self.device)
         self.u0a = self.u0a.to(self.device)
         self.u1a = self.u1a.to(self.device)
         self.pa = self.pa.to(self.device)
         self.mask = self.mask.to(self.device)
+        self.parm = self.parm.to(self.device)
