@@ -1,0 +1,52 @@
+data:
+  # name of test dataset
+  name: reference
+  # directory for storing test dataset
+  dirt: ./dataset
+
+param:
+  # Renold number
+  re: 100
+  # lower and upper bounds of the circle center
+  center_bounds: [-0.75,-0.15, 0.50,0.15]
+  # lower and upper bounds of the inlet volecity
+  u0_inlet_bounds: [0.75,1.25]
+  # size of the parameter
+  size: 100
+
+geo:
+  # lower and upper bounds of the geometric space
+  bounds: [-1.50,1.50, -0.50,0.50]
+  # radius of the circle
+  radius: 0.20
+  # size of the training set
+  nx: [90,30]
+
+model:
+  # number of Fourier modes in x1 direction
+  modes1: 8
+  # number of Fourier modes in x2 direction
+  modes2: 8
+  # number of input and output channels in Fourier layer
+  width: 32
+
+train:
+  # size of the batch
+  batch_size: 25
+  # number of outer iterations
+  epochs_o: 1000
+  # number of inner iterations
+  epochs_i: 100
+  # learning rate
+  lr: 0.001
+  # decay step
+  step_size: 5
+  # decay rate
+  gamma: 0.99
+
+# whether to read the cache
+load_cache: False
+# data type
+dtype: float32
+# device
+device: cuda

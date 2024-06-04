@@ -1,9 +1,9 @@
 import os
 import torch
 import numpy as np
-import pandas as pd
+import h5py
 
-class TrSet():
+class TrainSet4XFNO():
     def __init__(self, geo, mesh, re, u0_inlet, dtype, device, load_loss_weight):
         self.geo = geo
         self.mesh = mesh
@@ -510,10 +510,7 @@ class TrSet():
                     if self.mesh.fn_loc[p,m]==0:
                         self.r2[p,0,i,j] -= (self.mesh.fn_v0[p,m] * self.mesh.fn_n[p,m,0] + 
                                              self.mesh.fn_v1[p,m] * self.mesh.fn_n[p,m,1]) * self.mesh.fn_l[p,m]
-        '''
-        print(self.wei2_u0[0,:,0,0])
-        print(self.wei2_u1[0,:,0,0])
-        '''
+        
     def intp_coef_1(self, xi, x):
         tol = 1e-4
 
@@ -574,39 +571,39 @@ class TrSet():
         return c, c_x0, c_x1
 
     def load_loss_weight(self):
-        self.r0 = torch.load('./loss_weight/r0.pt')
-        self.r1 = torch.load('./loss_weight/r1.pt')
-        self.r2 = torch.load('./loss_weight/r2.pt')
+        self.r0 = torch.load('./cache/r0.pt')
+        self.r1 = torch.load('./cache/r1.pt')
+        self.r2 = torch.load('./cache/r2.pt')
 
-        self.wei0_u0_diff = torch.load('./loss_weight/wei0_u0_diff.pt')
-        self.wei0_u0_conv_u0 = torch.load('./loss_weight/wei0_u0_conv_u0.pt')
-        self.wei0_u0_conv_u1 = torch.load('./loss_weight/wei0_u0_conv_u1.pt')
-        self.wei0_p = torch.load('./loss_weight/wei0_p.pt')
-        self.wei1_u1_diff = torch.load('./loss_weight/wei1_u1_diff.pt')
-        self.wei1_u1_conv_u0 = torch.load('./loss_weight/wei1_u1_conv_u0.pt')
-        self.wei1_u1_conv_u1 = torch.load('./loss_weight/wei1_u1_conv_u1.pt')
-        self.wei1_p = torch.load('./loss_weight/wei1_p.pt')
-        self.wei2_u0 = torch.load('./loss_weight/wei2_u0.pt')
-        self.wei2_u1 = torch.load('./loss_weight/wei2_u1.pt')
-        self.wei2_p = torch.load('./loss_weight/wei2_p.pt')
+        self.wei0_u0_diff = torch.load('./cache/wei0_u0_diff.pt')
+        self.wei0_u0_conv_u0 = torch.load('./cache/wei0_u0_conv_u0.pt')
+        self.wei0_u0_conv_u1 = torch.load('./cache/wei0_u0_conv_u1.pt')
+        self.wei0_p = torch.load('./cache/wei0_p.pt')
+        self.wei1_u1_diff = torch.load('./cache/wei1_u1_diff.pt')
+        self.wei1_u1_conv_u0 = torch.load('./cache/wei1_u1_conv_u0.pt')
+        self.wei1_u1_conv_u1 = torch.load('./cache/wei1_u1_conv_u1.pt')
+        self.wei1_p = torch.load('./cache/wei1_p.pt')
+        self.wei2_u0 = torch.load('./cache/wei2_u0.pt')
+        self.wei2_u1 = torch.load('./cache/wei2_u1.pt')
+        self.wei2_p = torch.load('./cache/wei2_p.pt')
         
     def save_loss_weight(self):
-        os.makedirs('./loss_weight', exist_ok=True)
-        torch.save(self.r0, './loss_weight/r0.pt')
-        torch.save(self.r1, './loss_weight/r1.pt')
-        torch.save(self.r2, './loss_weight/r2.pt')
+        os.makedirs('./cache', exist_ok=True)
+        torch.save(self.r0, './cache/r0.pt')
+        torch.save(self.r1, './cache/r1.pt')
+        torch.save(self.r2, './cache/r2.pt')
         
-        torch.save(self.wei0_u0_diff, './loss_weight/wei0_u0_diff.pt')
-        torch.save(self.wei0_u0_conv_u0, './loss_weight/wei0_u0_conv_u0.pt')
-        torch.save(self.wei0_u0_conv_u1, './loss_weight/wei0_u0_conv_u1.pt')
-        torch.save(self.wei0_p, './loss_weight/wei0_p.pt')
-        torch.save(self.wei1_u1_diff, './loss_weight/wei1_u1_diff.pt')
-        torch.save(self.wei1_u1_conv_u0, './loss_weight/wei1_u1_conv_u0.pt')
-        torch.save(self.wei1_u1_conv_u1, './loss_weight/wei1_u1_conv_u1.pt')
-        torch.save(self.wei1_p, './loss_weight/wei1_p.pt')
-        torch.save(self.wei2_u0, './loss_weight/wei2_u0.pt')
-        torch.save(self.wei2_u1, './loss_weight/wei2_u1.pt')
-        torch.save(self.wei2_p, './loss_weight/wei2_p.pt')
+        torch.save(self.wei0_u0_diff, './cache/wei0_u0_diff.pt')
+        torch.save(self.wei0_u0_conv_u0, './cache/wei0_u0_conv_u0.pt')
+        torch.save(self.wei0_u0_conv_u1, './cache/wei0_u0_conv_u1.pt')
+        torch.save(self.wei0_p, './cache/wei0_p.pt')
+        torch.save(self.wei1_u1_diff, './cache/wei1_u1_diff.pt')
+        torch.save(self.wei1_u1_conv_u0, './cache/wei1_u1_conv_u0.pt')
+        torch.save(self.wei1_u1_conv_u1, './cache/wei1_u1_conv_u1.pt')
+        torch.save(self.wei1_p, './cache/wei1_p.pt')
+        torch.save(self.wei2_u0, './cache/wei2_u0.pt')
+        torch.save(self.wei2_u1, './cache/wei2_u1.pt')
+        torch.save(self.wei2_p, './cache/wei2_p.pt')
         
     def to(self, device):
         self.device = device
@@ -660,30 +657,38 @@ class TrSet():
     def __len__(self):
         return self.parm.shape[0]
 
-class TeSet():
-    def __init__(self, file_name, parm_size, nx, dtype):
-        self.parm_size = parm_size
-        self.nx = nx
+class TestSet4XFNO():
+    def __init__(self, name, dirt, dtype, device):
         self.dtype = dtype
+        self.device = device
         
-        data = pd.read_csv(file_name, header=None)
-        data = np.array(data)
-        data = torch.tensor(data, dtype=self.dtype)
+        data_dict = {}
+        with h5py.File(f'{dirt}/{name}.h5', 'r') as f:
+            for key in f:
+                data_dict[key] = np.array(f[key])
         
-        self.x0 = data[:,0:1].reshape(self.parm_size,1,self.nx[0],self.nx[1])
-        self.x1 = data[:,1:2].reshape(self.parm_size,1,self.nx[0],self.nx[1])
-        self.c_a = data[:,2:3].reshape(self.parm_size,1,self.nx[0],self.nx[1])
-        self.u0_inlet = data[:,3:4].reshape(self.parm_size,1,self.nx[0],self.nx[1])
-        self.u0a = data[:,4:5].reshape(self.parm_size,1,self.nx[0],self.nx[1])
-        self.u1a = data[:,5:6].reshape(self.parm_size,1,self.nx[0],self.nx[1])
-        self.pa = data[:,6:7].reshape(self.parm_size,1,self.nx[0],self.nx[1])
-        self.mask = data[:,7:8].reshape(self.parm_size,1,self.nx[0],self.nx[1])
+        self.parm_size = torch.tensor(data_dict['param_size']).int()
+        self.center = torch.tensor(data_dict['param_center'], dtype=self.dtype)
+        self.nx = torch.tensor(data_dict['nx']).int()
+        self.x = torch.tensor(data_dict['x'], dtype=self.dtype)
+        self.c_a = torch.tensor(data_dict['vol'], dtype=self.dtype)
+        self.u0_inlet = torch.tensor(data_dict['u0_i'], dtype=self.dtype)
+        self.u0a = torch.tensor(data_dict['u0'], dtype=self.dtype)
+        self.u1a = torch.tensor(data_dict['u1'], dtype=self.dtype)
+        self.pa = torch.tensor(data_dict['p'], dtype=self.dtype)
+        self.mask = torch.tensor(data_dict['mask'], dtype=self.dtype)
+
+        self.x0 = self.x[:,:,0:1].reshape(self.parm_size,1,self.nx[0],self.nx[1])
+        self.x1 = self.x[:,:,1:2].reshape(self.parm_size,1,self.nx[0],self.nx[1])
+        self.c_a = self.c_a.reshape(self.parm_size,1,self.nx[0],self.nx[1])
+        self.u0_inlet = self.u0_inlet.reshape(self.parm_size,1,self.nx[0],self.nx[1])
+        self.u0a = self.u0a.reshape(self.parm_size,1,self.nx[0],self.nx[1])
+        self.u1a = self.u1a.reshape(self.parm_size,1,self.nx[0],self.nx[1])
+        self.pa = self.pa.reshape(self.parm_size,1,self.nx[0],self.nx[1])
+        self.mask =self.mask.reshape(self.parm_size,1,self.nx[0],self.nx[1])
         
         self.c_a /= self.c_a.max()
         self.parm = torch.cat([self.c_a,self.u0_inlet],1)
-
-    def to(self, device):
-        self.device = device
 
         self.x0 = self.x0.to(self.device)
         self.x1 = self.x1.to(self.device)
@@ -694,3 +699,7 @@ class TeSet():
         self.pa = self.pa.to(self.device)
         self.mask = self.mask.to(self.device)
         self.parm = self.parm.to(self.device)
+
+class DataLoader(torch.utils.data.DataLoader):
+    def __init__(self, dataset, batch_size: int=1, shuffle: bool=True):
+        super(DataLoader, self).__init__(dataset, batch_size, shuffle)
