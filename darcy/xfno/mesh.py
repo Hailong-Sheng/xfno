@@ -1,7 +1,8 @@
 import torch
 import numpy as np
+import sklearn.metrics
 
-class Mesh():
+class MeshCartesian():
     def __init__(self, geo, bounds, nx):
         self.geo = geo
         self.bounds = bounds
@@ -235,7 +236,7 @@ class Mesh():
                 m = i*self.nx[1] + j
                 if self.c_loc[m]!=1:
                     continue
-
+                
                 self.c_a[m] = self.hx[0]*self.hx[1]
                 if self.cws_loc[m]==-1 and self.cwn_loc[m]==1 and self.ces_loc[m]==1:
                     self.c_a[m] = self.c_a[m] - 0.5*(self.fw_st[m]*self.hx[1])*(self.fs_st[m]*self.hx[0])
@@ -254,46 +255,158 @@ class Mesh():
                 if self.cwn_loc[m]==-1 and self.cen_loc[m]==-1:
                     self.c_a[m] = self.c_a[m] - 0.5*(1.0-self.fw_ed[m]+1.0-self.fe_ed[m])*self.hx[1]*self.hx[0]
 
-        """ interpolation node """
-        print('Genrating interpolation node ...')
-        self.intp_n_size = 3**2
-        self.intp_x = torch.zeros(self.c_size,self.intp_n_size,self.dim)
-        self.intp_i = torch.zeros(self.c_size,self.intp_n_size).long()
+class MeshNonCartesian():
+    def __init__(self, geo, bounds, nx):
+        self.geo = geo
+        self.bounds = bounds
+        self.nx = nx
+        
+        self.cen_size = self.nx[0]*self.nx[1]
+        self.cor_size = (self.nx[0]+1)*(self.nx[1]+1)
+        self.dim = self.bounds.shape[0]
+        self.cen_x = torch.zeros(self.cen_size,self.dim)
+        self.cor_x = torch.zeros(self.cor_size,self.dim)
+        self.cen_y = torch.zeros(self.cen_size,self.dim)
+        self.cor_y = torch.zeros(self.cor_size,self.dim)
+
+        ratio = 1.0 - self.geo.radius * 0.5*2**0.5
+        nx0 = [int(np.floor(0.5*ratio*self.nx[0])), int(np.floor(0.5*ratio*self.nx[1]))]
+        nx1 = [self.nx[0]-2*nx0[0], self.nx[1]-2*nx0[1]]
+        xx0 = [self.bounds[0,0],self.bounds[0,0]+ratio*1.0,self.bounds[0,1]-ratio*1.0,self.bounds[0,1]]
+        xx1 = [self.bounds[1,0],self.bounds[1,0]+ratio*1.0,self.bounds[1,1]-ratio*1.0,self.bounds[1,1]]
+
+        # center point
+        hx = [ratio*1.0/nx0[0], ratio*1.0/nx0[1]]
+        for i in range(nx0[0]):
+            for j in range(nx0[1]):
+                rx = self.bounds[0,0] + (i+0.5)*hx[0]
+                ry = self.bounds[1,0] + (j+0.5)*hx[1]
+                ri = i; rj = j
+                m = ri*self.nx[1] + rj
+                self.cen_x[m,0] = rx; self.cen_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cen(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*self.nx[1] + rj
+                self.cen_x[m,0] = rx; self.cen_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cen(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*self.nx[1] + rj
+                self.cen_x[m,0] = rx; self.cen_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cen(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*self.nx[1] + rj
+                self.cen_x[m,0] = rx; self.cen_x[m,1] = ry
+
+        # corner point
+        hx = [ratio*1.0/nx0[0], ratio*1.0/nx0[1]]
+        for i in range(nx0[0]+1):
+            for j in range(nx0[1]+1):
+                rx = self.bounds[0,0] + i*hx[0]
+                ry = self.bounds[1,0] + j*hx[1]
+                ri = i; rj = j
+                m = ri*(self.nx[1]+1) + rj
+                self.cor_x[m,0] = rx; self.cor_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cor(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*(self.nx[1]+1) + rj
+                self.cor_x[m,0] = rx; self.cor_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cor(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*(self.nx[1]+1) + rj
+                self.cor_x[m,0] = rx; self.cor_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cor(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*(self.nx[1]+1) + rj
+                self.cor_x[m,0] = rx; self.cor_x[m,1] = ry
+        
+        # center point
+        hx = [2*(1.0-ratio)*1.0/nx1[0],0]
+        for i in range(nx1[0]):
+            xc = xx0[1] + (i+0.5)*hx[0]
+            hx[1] = (1.0-(self.geo.radius**2-xc**2)**0.5)/nx0[1]
+            for j in range(nx0[1]):
+                rx = xc
+                ry = xx1[0] + (j+0.5)*hx[1]
+                ri = nx0[0]+i; rj = j
+                m = ri*self.nx[1] + rj
+                self.cen_x[m,0] = rx; self.cen_x[m,1] = ry
+
+                rx, ry, ri, rj = self.rotate_cen(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*self.nx[1] + rj
+                self.cen_x[m,0] = rx; self.cen_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cen(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*self.nx[1] + rj
+                self.cen_x[m,0] = rx; self.cen_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cen(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*self.nx[1] + rj
+                self.cen_x[m,0] = rx; self.cen_x[m,1] = ry
+
+        # corner point
+        hx = [2*(1.0-ratio)*1.0/nx1[0],0]
+        for i in range(1,nx1[0]):
+            xc = xx0[1] + i*hx[0]
+            hx[1] = (1.0-(self.geo.radius**2-xc**2)**0.5)/nx0[1]
+            for j in range(nx0[1]+1):
+                rx = xc
+                ry = xx1[0] + j*hx[1]
+                ri = nx0[0]+i; rj = j
+                m = ri*(self.nx[1]+1) + rj
+                self.cor_x[m,0] = rx; self.cor_x[m,1] = ry
+
+                rx, ry, ri, rj = self.rotate_cor(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*(self.nx[1]+1) + rj
+                self.cor_x[m,0] = rx; self.cor_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cor(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*(self.nx[1]+1) + rj
+                self.cor_x[m,0] = rx; self.cor_x[m,1] = ry
+                
+                rx, ry, ri, rj = self.rotate_cor(rx,ry,ri,rj,self.bounds,self.nx)
+                m = ri*(self.nx[1]+1) + rj
+                self.cor_x[m,0] = rx; self.cor_x[m,1] = ry
+        
+        self.cen_loc = self.geo.location(self.cen_x)
+        self.cor_loc = self.geo.location(self.cor_x)
+        
+        self.hx = (self.bounds[:,1]-self.bounds[:,0])/self.nx
         for i in range(self.nx[0]):
             for j in range(self.nx[1]):
                 m = i*self.nx[1] + j
-                if self.c_loc[m]!=1:
-                    continue
-                
-                self.intp_x[m,:,:], self.intp_i[m,:] = self.intp_node([i,j])
+                self.cen_y[m,0] = self.bounds[0,0] + (i+0.5)*self.hx[0]
+                self.cen_y[m,1] = self.bounds[1,0] + (j+0.5)*self.hx[1]
+        for i in range(self.nx[0]+1):
+            for j in range(self.nx[1]+1):
+                m = i*(self.nx[1]+1) + j
+                self.cor_y[m,0] = self.bounds[0,0] + i*self.hx[0]
+                self.cor_y[m,1] = self.bounds[1,0] + j*self.hx[1]
     
-    def intp_node(self, idx):
-        intp_n_size = 3**2
-        xi = torch.zeros(intp_n_size,self.dim)
-        ii = torch.zeros(intp_n_size).long()
+    def rotate_cen(self, x, y, i, j, bounds, nx):
+        rx = 0.5*(bounds[1,0]+bounds[1,1])-y
+        ry = x-0.5*(bounds[0,0]+bounds[0,1])
+        ri = nx[0]-1-j
+        rj = i
+        return rx, ry, ri, rj
+    
+    def rotate_cor(self, x, y, i, j, bounds, nx):
+        rx = 0.5*(bounds[1,0]+bounds[1,1])-y
+        ry = x-0.5*(bounds[0,0]+bounds[0,1])
+        ri = nx[0]-j
+        rj = i
+        return rx, ry, ri, rj
 
-        dir = [[-1,-1],[-1, 0],[-1, 1], [0,-1],[0, 0],[0, 1], [1,-1],[1, 0],[1, 1]]
-        dir = torch.tensor(dir).reshape(intp_n_size,self.dim)
-
-        # regular point
-        ix = idx[0]+dir[:,0]; iy = idx[1]+dir[:,1]
-        m = ix*self.nx[1] + iy
-        idx1 = ((ix>=0) & (ix<self.nx[0]) & (iy>=0) & (iy<self.nx[1]))
-        idx1[idx1==True] = (self.c_loc[m[idx1]]==1)
-        
-        xi[idx1,:] = self.c_x[m[idx1],:]
-        ii[idx1] = m[idx1]
-        
-        # irregular point
-        idx1 = ~idx1
-        m = idx[0]*self.nx[1] + idx[1]
-        x1 = self.c_x[m,:]
-        x1 = x1.reshape(1,self.dim).repeat(intp_n_size,1)
-        x2 = x1 + torch.tensor([self.hx[0],self.hx[1]]) * dir
-
-        xi_tmp = self.geo.intersection(x1[idx1,:], x2[idx1,:])
-
-        xi[idx1,:] = xi_tmp
-        ii[idx1] = -1
-
-        return xi, ii
+    def ball_connectivity(self, r, type='encode'):
+        x = torch.cat([self.cen_x, self.cen_y])
+        pwd = sklearn.metrics.pairwise_distances(x)
+        if type=='encode':
+            pwd = pwd[:self.cen_size,self.cen_size:]
+            edge_index = np.where((pwd<=r) & (self.cen_loc.view(-1,1).numpy()!=-1))
+            edge_index = np.vstack(edge_index)
+            edge_index[1] = [idx+self.cen_size for idx in edge_index[1]]
+        if type=='decode':
+            pwd = pwd[self.cen_size:,:self.cen_size]
+            edge_index = np.where((pwd<=r) & (self.cen_loc.numpy()!=-1))
+            edge_index = np.vstack(edge_index)
+            edge_index[0] = [idx+self.cen_size for idx in edge_index[0]]
+        return torch.tensor(edge_index, dtype=torch.long)

@@ -16,11 +16,11 @@ data:
   # directory for storing the dataset
   dirt: ./dataset
   # number of parameter
-  param_size: 100
+  param_size: 10
   # whether to load cache
   load_cache: False
   # batch size
-  batch_size: 16
+  batch_size: 5
 
 model:
   # number of input channels

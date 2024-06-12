@@ -4,26 +4,32 @@ import numpy as np
 import xfno
 
 def main():
-    config = xfno.utils.load_config('./config/fno.yaml')
-
+    config = xfno.utils.load_config('./config/geo_fno.yaml')
+    
     # geometry
     dim = 2
     bounds = torch.tensor(config.geo.bounds).reshape(dim,2)
     center = torch.tensor(config.geo.center)
     geo = xfno.geometry.Geometry(bounds, center, config.geo.radius)
-
+    
     # mesh
     nx = torch.tensor(config.mesh.nx).int()
-    msh = xfno.mesh.MeshCartesian(geo, bounds, nx)
-
-    # dataset
-    train_dataset = xfno.dataset.Dataset('train', geo, msh, config.data.param_size, 
-                                         config.data.load_cache, device=config.device)
-    valid_dataset = xfno.dataset.Dataset('valid', geo, msh, config.data.param_size, 
-                                         config.data.load_cache, device=config.device)
+    mesh_car = xfno.mesh.MeshCartesian(geo, bounds, nx)
+    mesh_non = xfno.mesh.MeshNonCartesian(geo, bounds, nx)
     
-    train_dataloader = xfno.dataset.get_dataloader(train_dataset, config.data.batch_size)
-    valid_dataloader = xfno.dataset.get_dataloader(valid_dataset, batch_size=50)
+    # dataset
+    train_dataset = xfno.dataset.Dataset('train', geo, mesh_car, config.data.param_size, 
+                                         config.data.load_cache, device=config.device)
+    train_dataset_geo_fno = xfno.dataset.DatasetGeoFNO('train', train_dataset, 
+        geo, mesh_non, config.data.param_size, device=config.device)
+    
+    valid_dataset = xfno.dataset.Dataset('valid', geo, mesh_car, config.data.param_size, 
+                                         config.data.load_cache, device=config.device)
+    valid_dataset_geo_fno = xfno.dataset.DatasetGeoFNO('valid', valid_dataset, 
+        geo, mesh_non, config.data.param_size, device=config.device)
+    
+    train_dataloader = xfno.dataset.get_dataloader(train_dataset_geo_fno, config.data.batch_size)
+    valid_dataloader = xfno.dataset.get_dataloader(valid_dataset_geo_fno, batch_size=50)
     
     # model
     input_scale = [train_dataset.param.mean(), train_dataset.param.std()]

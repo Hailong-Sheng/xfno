@@ -18,7 +18,7 @@ data:
   # number of parameter
   param_size: 100
   # whether to load cache
-  load_cache: False
+  load_cache: True
   # batch size
   batch_size: 16
 
