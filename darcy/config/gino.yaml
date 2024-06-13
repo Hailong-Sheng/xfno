@@ -18,7 +18,7 @@ data:
   # number of parameter
   param_size: 100
   # whether to load cache
-  load_cache: False
+  load_cache: True
   # batch size
   batch_size: 16
 
@@ -37,14 +37,22 @@ model:
   padding: 9
   # layer num
   layer_num: 4
+  # kernel width
+  ker_width: 100
+  # kernel depth
+  ker_depth: 1
+  # edge attribute dim
+  edge_attr_dim: 6
+  # node attribute dim
+  node_attr_dim: 1
 
 train:
   # learinng rate
   lr: 0.001
-  # weight dacay rate
-  decay_rate: 0.98
-  # scheduler step
-  decay_step: 200
+  # scheduler step size
+  step_size: 100
+  # scheduler dacay rate
+  gamma: 0.99
   # number of training epoch
   epoch_num: 10000
 

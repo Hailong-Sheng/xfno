@@ -3,7 +3,14 @@ import numpy as np
 import sklearn.metrics
 
 class MeshCartesian():
+    """ Cartesian mesh """
     def __init__(self, geo, bounds, nx):
+        """ initialization
+        args:
+            geo: geometry
+            bounds: lower and upper bounds of the domain
+            nx: size of the mesh
+        """
         self.geo = geo
         self.bounds = bounds
         self.nx = nx
@@ -13,8 +20,9 @@ class MeshCartesian():
         self.xx = torch.linspace(self.bounds[0,0]+self.hx[0]/2,self.bounds[0,1]-self.hx[0]/2,self.nx[0])
         self.yy = torch.linspace(self.bounds[1,0]+self.hx[1]/2,self.bounds[1,1]-self.hx[1]/2,self.nx[1])
         
-        """ cell center """
         print('Genrating mesh ...')
+
+        # cell center
         print('Genrating cell center ...')
         self.c_size = self.nx[0]*self.nx[1]
         self.c_x = torch.zeros(self.c_size,self.dim)
@@ -26,9 +34,8 @@ class MeshCartesian():
         
         self.c_loc = self.geo.location(self.c_x)
         
-        """ cell corner
-            w: west; e: east; s: south; n: north
-        """
+        # cell corner
+        # w: west; e: east; s: south; n: north
         print('Genrating cell corner ...')
         self.cws_x = self.c_x + torch.tensor([-0.5*self.hx[0],-0.5*self.hx[1]])
         self.cwn_x = self.c_x + torch.tensor([-0.5*self.hx[0], 0.5*self.hx[1]])
@@ -39,7 +46,7 @@ class MeshCartesian():
         self.ces_loc = self.geo.location(self.ces_x)
         self.cen_loc = self.geo.location(self.cen_x)
 
-        """ neighbor cell """
+        # neighbor cell
         print('Genrating neighbor cell ...')
         self.nw_x = self.c_x + torch.tensor([-self.hx[0],0])
         self.ne_x = self.c_x + torch.tensor([ self.hx[0],0])
@@ -50,7 +57,7 @@ class MeshCartesian():
         self.ns_loc = self.geo.location(self.ns_x)
         self.nn_loc = self.geo.location(self.nn_x)
         
-        """ cell face """
+        # cell face
         print('Genrating cell face ...')
         self.fw_st = torch.zeros(self.c_size); self.fw_ed = torch.ones(self.c_size)
         self.fe_st = torch.zeros(self.c_size); self.fe_ed = torch.ones(self.c_size)
@@ -228,7 +235,7 @@ class MeshCartesian():
                     self.fen_n[m,:] = torch.tensor([tmp[1],tmp[0]])
                     self.fen_n[m,:] = self.fen_n[m,:]/(((self.fen_n[m,:]**2).sum())**0.5)
         
-        """ cell area """
+        # cell area
         print('Genrating cell area ...')
         self.c_a = torch.zeros(self.c_size)
         for i in range(self.nx[0]):
@@ -256,7 +263,14 @@ class MeshCartesian():
                     self.c_a[m] = self.c_a[m] - 0.5*(1.0-self.fw_ed[m]+1.0-self.fe_ed[m])*self.hx[1]*self.hx[0]
 
 class MeshNonCartesian():
+    """ non-Cartesian mesh """
     def __init__(self, geo, bounds, nx):
+        """ initialization
+        args:
+            geo: geometry
+            bounds: lower and upper bounds of the domain
+            nx: size of the mesh
+        """
         self.geo = geo
         self.bounds = bounds
         self.nx = nx

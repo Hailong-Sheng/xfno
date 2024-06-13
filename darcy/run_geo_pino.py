@@ -19,17 +19,17 @@ def main():
     
     # dataset
     train_dataset = xfno.dataset.Dataset('train', geo, mesh_car, config.data.param_size, 
-                                    config.data.load_cache, device=config.device)
+                                         config.data.load_cache, device=config.device)
     train_dataset_geo_pino = xfno.dataset.DatasetGeoPINO('train', train_dataset, 
         geo, mesh_non, config.data.param_size, device=config.device)
     
     valid_dataset = xfno.dataset.Dataset('valid', geo, mesh_car, config.data.param_size, 
-                                    config.data.load_cache, device=config.device)
+                                         config.data.load_cache, device=config.device)
     valid_dataset_geo_pino = xfno.dataset.DatasetGeoPINO('valid', valid_dataset, 
         geo, mesh_non, config.data.param_size, device=config.device)
     
-    train_dataloader = xfno.dataset.get_dataloader(train_dataset_geo_pino, config.data.batch_size)
-    valid_dataloader = xfno.dataset.get_dataloader(valid_dataset_geo_pino, config.data.batch_size)
+    train_dataloader = xfno.dataset.PyGDataLoader(train_dataset_geo_pino, config.data.batch_size)
+    valid_dataloader = xfno.dataset.PyGDataLoader(valid_dataset_geo_pino, batch_size=50)
     
     # model
     input_scale = [train_dataset.param.mean(), train_dataset.param.std()]
@@ -48,8 +48,10 @@ def main():
     # train
     optimizer_u = torch.optim.Adam(model_u.parameters(), lr=config.train.lr)
     optimizer_c = torch.optim.Adam(model_c.parameters(), lr=config.train.lr)
-    scheduler_u = torch.optim.lr_scheduler.StepLR(optimizer_u, step_size=100, gamma=0.98)
-    scheduler_c = torch.optim.lr_scheduler.StepLR(optimizer_c, step_size=100, gamma=0.98)
+    scheduler_u = torch.optim.lr_scheduler.StepLR(optimizer_u,
+        step_size=config.train.step_size, gamma=config.train.gamma)
+    scheduler_c = torch.optim.lr_scheduler.StepLR(optimizer_c,
+        step_size=config.train.step_size, gamma=config.train.gamma)
 
     trainer_c = xfno.train.TrainerCT(train_dataloader, model_c, loss_c, optimizer_c, scheduler_c, 
                                      epoch_num=500, device=config.device)

@@ -2,11 +2,9 @@ import os
 import torch
 import numpy as np
 import h5py
-import pandas as pd
 import scipy.sparse
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
-from torch.utils.data import DataLoader
 from torch_geometric.data import Data as PygData
 from torch_geometric.data import Dataset as PygDataset
 from torch_geometric.loader import DataLoader as PygDataLoader
@@ -14,11 +12,19 @@ from torch_geometric.loader import DataLoader as PygDataLoader
 import xfno
 
 class Dataset(torch.utils.data.Dataset):
-    """ Dataset
-    Args:
-    """
+    """ dataset """
     def __init__(self, dataset_type, geo, mesh, param_size, load_cache,
                  dtype=torch.float32, device='cpu'):
+        """ initialization
+        args:
+            dataset_type: type of dataset ('train' or 'valid')
+            geo: geometry
+            mesh: mesh
+            param_size: size of sample in parametric space
+            load_cache: whether to load cache
+            dtype: datatype
+            device: computing device
+        """
         super().__init__()
         self.dataset_type = dataset_type
         self.geo = geo
@@ -28,7 +34,9 @@ class Dataset(torch.utils.data.Dataset):
         self.dtype = dtype
         self.device = device
 
-        self.intp_func = xfno.interpolation.InterpolationFunction(self.geo, self.mesh, self.dtype)
+        # interpolation function
+        self.intp_func = xfno.interpolation.InterpolationFunction(
+            self.geo, self.mesh, self.dtype)
         
         # parameter
         if self.load_cache:
@@ -44,38 +52,32 @@ class Dataset(torch.utils.data.Dataset):
         if self.load_cache:
             self.load_loss_weight()
         else:
-            self.calculate_loss_weight()
+            self.generate_loss_weight()
             self.save_loss_weight()
         
         # label
         if self.load_cache:
             self.load_label()
         else:
-            self.calculate_label()
+            self.generate_label()
             self.save_label()
 
         self.save_dataset()
     
     def generate_param(self):
-        self.norm_a = torch.zeros(self.param_size,1,self.mesh.nx[0],self.mesh.nx[1])
+        print('Generating parameter ...')
+
         self.param = torch.zeros(self.param_size,1,self.mesh.nx[0],self.mesh.nx[1])
         for p in range(self.param_size):
             norm_a = xfno.gaussian_random_field.grf(alpha=2, tau=3, s=int(self.mesh.nx[0]))
-
             for i in range(self.mesh.nx[0]):
                 for j in range(self.mesh.nx[1]):
                     m = i*self.mesh.nx[1] + j
                     if self.mesh.c_loc[m]!=1:
                         continue
+                    # self.param[p,0,i,j] = np.exp(norm_a[i,j])
+                    self.param[p,0,i,j] = 12*(norm_a[i,j]>=0) + 4*(norm_a[i,j]<0)
 
-                    self.norm_a[p,0,i,j] = norm_a[i,j]
-                    self.param[p,0,i,j] = self.convert_a(norm_a[i,j])
-        
-    def convert_a(self, norm_a):
-        lognorm_a = np.exp(norm_a)
-        thresh_a = 12*(norm_a>=0) + 4*(norm_a<0)
-        return thresh_a
-        
     def generate_boundary_value(self):
         print('Generating boundary value ...')
 
@@ -88,8 +90,8 @@ class Dataset(torch.utils.data.Dataset):
         # boundary value on the interpolation node (if node is located on the boundary)
         self.intp_func.v = torch.zeros(self.param_size,self.mesh.c_size,self.intp_func.n_size)
         self.intp_func.a = torch.zeros(self.param_size,self.mesh.c_size,self.intp_func.n_size)
-        self.mesh.c_norm_a = self.norm_a.reshape(self.param_size,self.mesh.c_size)
         for p in range(self.param_size):
+            intp_a = self.param[p,0,:,:].reshape(self.mesh.c_size)
             for i in range(self.mesh.nx[0]):
                 for j in range(self.mesh.nx[1]):
                     m = i*self.mesh.nx[1] + j
@@ -100,19 +102,18 @@ class Dataset(torch.utils.data.Dataset):
                     for r in range(3):
                         for s in range(3):
                             n = r*3 + s
-                            if ii[n]==-1:
-                                self.intp_func.v[p,m,n] = 0.0
-                                self.intp_func.a[p,m,n] = self.convert_a(self.mesh.c_norm_a[p,m]) ##
+                            if ii[n]!=-1:
+                                self.intp_func.a[p,m,n] = intp_a[ii[n]]
                             else:
-                                self.intp_func.a[p,m,n] = self.convert_a(self.mesh.c_norm_a[p,ii[n]])
-        
-        # Reshape for calculating the value of loss function
+                                self.intp_func.a[p,m,n] = intp_a[m]
+                                self.intp_func.v[p,m,n] = 0.0
+
+        # reshape for calculating the value of loss function
         self.v = (self.intp_func.v.permute(0,2,1)).reshape(
             self.param_size,self.intp_func.n_size,self.mesh.nx[0],self.mesh.nx[1])
 
-    def calculate_loss_weight(self):
-        # weight for calculating the value of loss function
-        print('Generating weight for evaluating the residual of equation ...')
+    def generate_loss_weight(self):
+        print('Generating weight for evaluating the equation residual ...')
 
         # right hand side
         self.r = 1 * self.mesh.c_a.reshape(1,1,self.mesh.nx[0],self.mesh.nx[1])
@@ -122,7 +123,6 @@ class Dataset(torch.utils.data.Dataset):
         for i in range(self.mesh.nx[0]):
             for j in range(self.mesh.nx[1]):
                 m = i*self.mesh.nx[1] + j
-                # print(m)
                 if self.mesh.c_loc[m]!=1:
                     continue
                 
@@ -228,9 +228,12 @@ class Dataset(torch.utils.data.Dataset):
                         diff = -ca * (c_x0[n]*self.mesh.fen_n[m,0] + c_x1[n]*self.mesh.fen_n[m,1])
                         self.wei_u[:,n,i,j] += diff * self.mesh.fen_l[m]
     
-    def calculate_label(self):
+    def generate_label(self):
+        print('Generating label ...')
+
         self.a, self.b = [], []
         for p in range(self.param_size):
+            print(f'for the {p}th data')
             a = scipy.sparse.coo_matrix((self.mesh.c_size,self.mesh.c_size))
             b = torch.zeros(self.mesh.c_size,1)
             for i in range(self.mesh.nx[0]):
@@ -256,7 +259,6 @@ class Dataset(torch.utils.data.Dataset):
 
         self.label = np.zeros([self.param_size,self.mesh.c_size])
         for p in range(self.param_size):
-
             idx = self.mesh.c_loc.reshape(self.mesh.c_size)==1
             a = self.a[p][idx,:][:,idx]
             a = a.toarray()
@@ -267,7 +269,7 @@ class Dataset(torch.utils.data.Dataset):
             
             idx = np.array(idx, bool)
             self.label[p,idx] = u_
-        
+
         param = self.param.reshape(self.param_size,1,self.mesh.nx[0],self.mesh.nx[1])
         label = self.label.reshape(self.param_size,1,self.mesh.nx[0],self.mesh.nx[1])
         mask = idx.reshape(1,1,self.mesh.nx[0],self.mesh.nx[1])
@@ -277,7 +279,7 @@ class Dataset(torch.utils.data.Dataset):
         self.mask = torch.as_tensor(mask)
     
     def load_param(self):
-        self.norm_a = torch.load(f'./cache/{self.dataset_type}/norm_a.pt')
+        print('loading parameter ...')
         self.param = torch.load(f'./cache/{self.dataset_type}/param.pt')
         self.param_size = self.param.shape[0]
         print('parameter shape:')
@@ -285,37 +287,41 @@ class Dataset(torch.utils.data.Dataset):
         print(f"parameter mean: {self.param.mean():.5e}, std: {self.param.std():.5e}")
     
     def save_param(self):
+        print('saving parameter ...')
         os.makedirs(f'./cache/{self.dataset_type}', exist_ok=True)
-        torch.save(self.norm_a, f'./cache/{self.dataset_type}/norm_a.pt')
         torch.save(self.param, f'./cache/{self.dataset_type}/param.pt')
 
     def load_loss_weight(self):
+        print('loading loss weight ...')
         self.r = torch.load(f'./cache/{self.dataset_type}/r.pt')
         self.wei_u = torch.load(f'./cache/{self.dataset_type}/wei_u.pt')
 
     def save_loss_weight(self):
+        print('saving loss weight ...')
         os.makedirs(f'./cache/{self.dataset_type}', exist_ok=True)
         torch.save(self.r, f'./cache/{self.dataset_type}/r.pt')
         torch.save(self.wei_u, f'./cache/{self.dataset_type}/wei_u.pt')
     
     def load_label(self):
+        print('loading label ...')
         self.label = torch.load(f'./cache/{self.dataset_type}/label.pt')
         self.mask = torch.load(f'./cache/{self.dataset_type}/mask.pt')
-        #np.savetxt('u.txt', self.label[:,0,:,:].reshape(100,400))
     
     def save_label(self):
+        print('saving label ...')
         os.makedirs(f'./cache/{self.dataset_type}', exist_ok=True)
         torch.save(self.label, f'./cache/{self.dataset_type}/label.pt')
         torch.save(self.mask, f'./cache/{self.dataset_type}/mask.pt')
-        #np.savetxt('u.txt', self.label[:,0,:,:].reshape(100,400))
     
     def load_dataset(self):
+        print('loading dataset ...')
         data = h5py.File(f'./dataset/{self.dataset_type}_{self.mesh.nx[0]}.hdf5', "r")
         self.param = torch.as_tensor(data['param'])
         self.label = torch.as_tensor(data['label'])
         self.mask = torch.as_tensor(data['mask'])
     
     def save_dataset(self):
+        print('saving dataset ...')
         data_dict = {}
         data_dict['param'] = np.array(self.param)
         data_dict['label'] = np.array(self.label)
@@ -396,7 +402,7 @@ class DatasetGeoFNO():
                         self.a[p,0,i,j] += c[n] * intp_a[n]
                         self.ax0[p,0,i,j] += c_x0[n] * intp_a[n]
                         self.ax1[p,0,i,j] += c_x1[n] * intp_a[n]
-        
+
         self.mask = (self.mesh_non.cen_loc==1).reshape(1,1,self.mesh_non.nx[0],self.mesh_non.nx[1])
 
     def __getitem__(self, idx):
@@ -475,7 +481,7 @@ class DatasetGeoPINO():
                         self.a[p,0,i,j] += c[n] * intp_a[n]
                         self.ax0[p,0,i,j] += c_x0[n] * intp_a[n]
                         self.ax1[p,0,i,j] += c_x1[n] * intp_a[n]
-        
+
         self.mask = self.mesh_non.cor_loc.reshape(1,1,self.mesh_non.nx[0]+1,self.mesh_non.nx[1]+1)
 
         self.cordinate_transformation()
@@ -633,41 +639,24 @@ class DatasetGINO(PygDataset):
     def len(self):
         return len(self.graph)
 
-class PyGDataLoader(PygDataLoader):
+class DataLoader(torch.utils.data.DataLoader):
+    """ dataLoader for loading data """
     def __init__(self, dataset, batch_size: int=1, shuffle: bool=True):
-        super(PyGDataLoader, self).__init__(dataset, batch_size, shuffle)
-        """ DataLoader class for loading graph datasets.
-        Args:
+        super(DataLoader, self).__init__(dataset, batch_size, shuffle)
+        """ initialization
+        args:
             dataset: dataset class
             batch_size: size of batch data
             shuffle: whether to shuffle the data
         """
 
-def get_dataloader(dataset, batch_size: int, shuffle: bool=True):
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
-    return dataloader
-
-class TeSet():
-    def __init__(self, file_name, param_size, nx, dtype):
-        self.param_size = param_size
-        self.nx = nx
-        self.dtype = dtype
-        
-        data = pd.read_csv(file_name, header=None)
-        data = np.array(data)
-        data = torch.tensor(data, dtype=self.dtype)
-        
-        self.x0 = data[:,0:1].reshape(self.param_size,1,self.nx[0],self.nx[1])
-        self.x1 = data[:,1:2].reshape(self.param_size,1,self.nx[0],self.nx[1])
-        self.param = data[:,2:3].reshape(self.param_size,1,self.nx[0],self.nx[1])
-        self.label = data[:,3:4].reshape(self.param_size,1,self.nx[0],self.nx[1])
-        self.mask = data[:,4:5].reshape(self.param_size,1,self.nx[0],self.nx[1])
-
-    def to(self, device):
-        self.device = device
-
-        self.x0 = self.x0.to(self.device)
-        self.x1 = self.x1.to(self.device)
-        self.param = self.param.to(self.device)
-        self.label = self.label.to(self.device)
-        self.mask = self.mask.to(self.device)
+class PyGDataLoader(PygDataLoader):
+    """ dataLoader for loading graph data """
+    def __init__(self, dataset, batch_size: int=1, shuffle: bool=True):
+        super(PyGDataLoader, self).__init__(dataset, batch_size, shuffle)
+        """ initialization
+        args:
+            dataset: dataset class
+            batch_size: size of batch data
+            shuffle: whether to shuffle the data
+        """

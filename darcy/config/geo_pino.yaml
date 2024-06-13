@@ -16,11 +16,11 @@ data:
   # directory for storing the dataset
   dirt: ./dataset
   # number of parameter
-  param_size: 10
+  param_size: 100
   # whether to load cache
   load_cache: False
   # batch size
-  batch_size: 5
+  batch_size: 16
 
 model:
   # number of input channels
@@ -41,10 +41,10 @@ model:
 train:
   # learinng rate
   lr: 0.001
-  # weight dacay rate
-  decay_rate: 0.98
-  # scheduler step
-  decay_step: 200
+  # scheduler step size
+  step_size: 100
+  # scheduler dacay rate
+  gamma: 0.99
   # number of training epoch
   epoch_num: 10000
 

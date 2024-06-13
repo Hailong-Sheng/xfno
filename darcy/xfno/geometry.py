@@ -1,7 +1,14 @@
 import torch
 
 class Geometry():
+    """ geometry """
     def __init__(self, bounds, center, radius):
+        """ initialization
+        args:
+            bounds: lower and upper bounds of the geometry
+            center: center of the circle
+            radius: radius of the circle
+        """
         self.bounds = bounds
         self.center = center
         self.radius = radius
@@ -9,7 +16,11 @@ class Geometry():
         self.dim = self.bounds.shape[0]
         
     def location(self, x):
-        """ location of data point
+        """ generate the location of data point
+        args:
+            x: coordinate of data point
+        returns:
+            loc: location of data point
             1: in the domain; 0: on the boundary; -1: out of the boundary
         """
         x0 = x[...,0]
@@ -35,7 +46,12 @@ class Geometry():
         return loc
         
     def intersection(self, x0, x1):
-        """ Compute the intersection between the segement x0x1 and the domain boundary. """
+        """ compute the intersection between the segement x0x1 and the domain boundary
+        args:
+            x0, x1: endpoints of the segment
+        returns:
+            x: intersection
+        """
         x0 = x0.clone()
         x1 = x1.clone()
         x = torch.zeros(x0.shape)

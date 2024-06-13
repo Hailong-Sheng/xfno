@@ -14,16 +14,16 @@ def main():
 
     # mesh
     nx = torch.tensor(config.mesh.nx).int()
-    msh = xfno.mesh.MeshCartesian(geo, bounds, nx)
+    mesh = xfno.mesh.MeshCartesian(geo, bounds, nx)
 
     # dataset
-    train_dataset = xfno.dataset.Dataset('train', geo, msh, config.data.param_size, 
+    train_dataset = xfno.dataset.Dataset('train', geo, mesh, config.data.param_size, 
                                          config.data.load_cache, device=config.device)
-    valid_dataset = xfno.dataset.Dataset('valid', geo, msh, config.data.param_size, 
+    valid_dataset = xfno.dataset.Dataset('valid', geo, mesh, config.data.param_size, 
                                          config.data.load_cache, device=config.device)
     
-    train_dataloader = xfno.dataset.get_dataloader(train_dataset, config.data.batch_size)
-    valid_dataloader = xfno.dataset.get_dataloader(valid_dataset, batch_size=50)
+    train_dataloader = xfno.dataset.DataLoader(train_dataset, config.data.batch_size)
+    valid_dataloader = xfno.dataset.DataLoader(valid_dataset, batch_size=50)
     
     # model
     input_scale = [train_dataset.param.mean(), train_dataset.param.std()]
@@ -38,8 +38,8 @@ def main():
     
     # train
     optimizer = torch.optim.Adam(model.parameters(), lr=config.train.lr)
-    gamma = config.train.decay_rate**(1.0/config.train.decay_step)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
+        step_size=config.train.step_size, gamma=config.train.gamma)
 
     trainer = xfno.train.Trainer(train_dataloader=train_dataloader, 
                                  valid_dataloader=valid_dataloader, 
@@ -48,14 +48,5 @@ def main():
                                  epoch_num=config.train.epoch_num)
     trainer.train()
     
-    # evaluate
-    '''
-    val_parm = torch.tensor(val_parm).to(config.device)
-    val_targ = torch.tensor(val_targ).to(config.device)
-    val_mask = torch.tensor(val_mask).to(config.device)
-    val_pred = fno(val_parm)
-    val_error = ((val_mask*(val_pred-val_targ)**2).sum() / (val_mask*val_targ**2).sum()) **0.5
-    print(val_error)
-    '''
 if __name__ == "__main__":
     main()
