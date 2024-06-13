@@ -29,7 +29,6 @@ def main():
         geo, mesh_non, config.data.param_size, device=config.device)
     
     train_dataloader = xfno.dataset.PyGDataLoader(train_dataset_gino, config.data.batch_size)
-    valid_dataloader = xfno.dataset.PyGDataLoader(valid_dataset_gino, batch_size=50)
     
     # encoder
     encoder = xfno.model.KernelNN(config.model.width, config.model.ker_width, config.model.ker_depth,
@@ -63,11 +62,11 @@ def main():
         step_size=config.train.step_size, gamma=config.train.gamma)
 
     trainer = xfno.train.Trainer(train_dataloader=train_dataloader, 
-                            valid_dataloader=valid_dataloader, 
-                            model=model, loss=loss, error=error,
-                            optimizer=optimizer, scheduler=scheduler,
-                            epoch_num=config.train.epoch_num)
+                                 valid_dataset=valid_dataset_gino, 
+                                 model=model, loss=loss, error=error,
+                                 optimizer=optimizer, scheduler=scheduler,
+                                 epoch_num=config.train.epoch_num)
     trainer.train()
 
-if __name__=='__main__':
+if __name__ == '__main__':
     main()

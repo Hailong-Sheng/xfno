@@ -29,7 +29,6 @@ def main():
         geo, mesh_non, config.data.param_size, device=config.device)
     
     train_dataloader = xfno.dataset.DataLoader(train_dataset_geo_fno, config.data.batch_size)
-    valid_dataloader = xfno.dataset.DataLoader(valid_dataset_geo_fno, batch_size=50)
     
     # model
     input_scale = [train_dataset.param.mean(), train_dataset.param.std()]
@@ -48,7 +47,7 @@ def main():
         step_size=config.train.step_size, gamma=config.train.gamma)
 
     trainer = xfno.train.Trainer(train_dataloader=train_dataloader, 
-                                 valid_dataloader=valid_dataloader, 
+                                 valid_dataset=valid_dataset_geo_fno, 
                                  model=model, loss=loss, error=error,
                                  optimizer=optimizer, scheduler=scheduler,
                                  epoch_num=config.train.epoch_num)

@@ -4,11 +4,11 @@ import numpy as np
 import time
 
 class Trainer():
-    def __init__(self, train_dataloader, valid_dataloader, model, loss, error,
+    def __init__(self, train_dataloader, valid_dataset, model, loss, error,
                  optimizer, scheduler, epoch_num: int=1000, print_freq: int=10,
                  device: str='cuda'):
         self.train_dataloader = train_dataloader
-        self.valid_dataloader = valid_dataloader
+        self.valid_dataset = valid_dataset
         self.model = model
         self.loss = loss
         self.error = error
@@ -36,18 +36,16 @@ class Trainer():
             
             # print loss stats
             if epoch % self.print_freq == 0:
-                for data in self.valid_dataloader:
-                    error = self.error(data)
-                    error_history.append(torch.unsqueeze(error,dim=0).cpu().detach())
+                error = self.error(self.valid_dataset)
+                error_history.append(torch.unsqueeze(error,dim=0).cpu().detach())
 
-                    info = (f'epoch: {epoch:10d} | loss: {loss.cpu().detach():10.3e} | ' + 
-                            f'error: {error.cpu().detach():10.3e}')
-                    if epoch >= 0:
-                        info += f', time: {time.time()-st:10.3e} s'
-                    print(info)
-                    
-                    st = time.time()
-                    break
+                info = (f'epoch: {epoch:10d} | loss: {loss.cpu().detach():10.3e} | ' + 
+                        f'error: {error.cpu().detach():10.3e}')
+                if epoch >= 0:
+                    info += f', time: {time.time()-st:10.3e} s'
+                print(info)
+
+                st = time.time()
             
         os.makedirs('result', exist_ok=True)
         np.savetxt('result/error_history.txt', np.array(error_history))

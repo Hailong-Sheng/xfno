@@ -23,7 +23,6 @@ def main():
                                          config.data.load_cache, device=config.device)
     
     train_dataloader = xfno.dataset.DataLoader(train_dataset, config.data.batch_size)
-    valid_dataloader = xfno.dataset.DataLoader(valid_dataset, batch_size=50)
     
     # model
     input_scale = [train_dataset.param.mean(), train_dataset.param.std()]
@@ -42,7 +41,7 @@ def main():
         step_size=config.train.step_size, gamma=config.train.gamma)
 
     trainer = xfno.train.Trainer(train_dataloader=train_dataloader, 
-                                 valid_dataloader=valid_dataloader, 
+                                 valid_dataset=valid_dataset, 
                                  model=model, loss=loss, error=error,
                                  optimizer=optimizer, scheduler=scheduler,
                                  epoch_num=config.train.epoch_num)

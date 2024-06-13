@@ -63,6 +63,7 @@ class Dataset(torch.utils.data.Dataset):
             self.save_label()
 
         self.save_dataset()
+        self.to(self.device)
     
     def generate_param(self):
         print('Generating parameter ...')
@@ -332,6 +333,14 @@ class Dataset(torch.utils.data.Dataset):
             for key, value in data_dict.items():
                 f.create_dataset(key, data=value)
 
+    def to(self, device):
+        self.device = device
+        self.param = self.param.to(self.device)
+        self.label = self.label.to(self.device)
+        self.mask = self.mask.to(self.device)
+        self.wei_u = self.wei_u.to(self.device)
+        self.r = self.r.to(self.device)
+    
     def __getitem__(self, idx):
         data = {}
         data['param'] = self.param[idx].to(self.device)
@@ -405,6 +414,14 @@ class DatasetGeoFNO():
 
         self.mask = (self.mesh_non.cen_loc==1).reshape(1,1,self.mesh_non.nx[0],self.mesh_non.nx[1])
 
+        self.to(self.device)
+
+    def to(self, device):
+        self.device = device
+        self.param = self.param.to(self.device)
+        self.label = self.label.to(self.device)
+        self.mask = self.mask.to(self.device)
+    
     def __getitem__(self, idx):
         data = {}
         data['param'] = self.param[idx].to(self.device)
@@ -486,6 +503,8 @@ class DatasetGeoPINO():
 
         self.cordinate_transformation()
 
+        self.to(self.device)
+
     def cordinate_transformation(self, model_c=None):
         if model_c==None:
             self.c0 = torch.zeros(self.param_size,1,self.mesh_non.nx[0]+1,self.mesh_non.nx[1]+1)
@@ -534,6 +553,12 @@ class DatasetGeoPINO():
             self.c1x1 = self.c1x1.detach()
             self.c1x0x0 = self.c1x0x0.detach()
             self.c1x1x1 = self.c1x1x1.detach()
+
+    def to(self, device):
+        self.device = device
+        self.param = self.param.to(self.device)
+        self.label = self.label.to(self.device)
+        self.mask = self.mask.to(self.device)
 
     def __getitem__(self, idx):
         data = {}
@@ -632,6 +657,13 @@ class DatasetGINO(PygDataset):
             graph = PygData(x=param, y=self.label[p:p+1], mask=self.mask,
                             edge_index=edge_index, edge_attr=edge_attr)        
             self.graph.append(graph)
+        
+        self.to(self.device)
+
+    def to(self, device):
+        self.device = device
+        for idx in range(len(self.graph)):
+            self.graph[idx] = self.graph[idx].to(self.device)
 
     def get(self, idx):
         return self.graph[idx].to(self.device)

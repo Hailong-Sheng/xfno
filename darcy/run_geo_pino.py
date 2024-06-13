@@ -29,7 +29,6 @@ def main():
         geo, mesh_non, config.data.param_size, device=config.device)
     
     train_dataloader = xfno.dataset.PyGDataLoader(train_dataset_geo_pino, config.data.batch_size)
-    valid_dataloader = xfno.dataset.PyGDataLoader(valid_dataset_geo_pino, batch_size=50)
     
     # model
     input_scale = [train_dataset.param.mean(), train_dataset.param.std()]
@@ -59,7 +58,7 @@ def main():
     train_dataset_geo_pino.cordinate_transformation(model_c)
 
     trainer_u = xfno.train.Trainer(train_dataloader=train_dataloader, 
-                                   valid_dataloader=valid_dataloader, 
+                                   valid_dataset=valid_dataset_geo_pino, 
                                    model=model_u, loss=loss_u, error=error_u,
                                    optimizer=optimizer_u, scheduler=scheduler_u,
                                    epoch_num=config.train.epoch_num)

@@ -1,4 +1,6 @@
 import torch
+from torch_geometric.data import Batch
+
 import xfno
 
 class Loss:
@@ -100,20 +102,22 @@ class RelativeError:
     def __init__(self, model):
         self.model = model
         
-    def __call__(self, data):
-        data['pre'] = self.model(data['param'])
-        data['res'] = data['pre'] - data['label']
-        data['err'] = ((data['mask']*data['res']**2).sum() / 
-                       (data['mask']*data['label']**2).sum())**0.5
-        return data['err']
+    def __call__(self, dataset):
+        pre = self.model(dataset.param)
+        res = pre - dataset.label
+        err = ((dataset.mask*res**2).sum() / 
+               (dataset.mask*dataset.label**2).sum())**0.5
+        return err
 
 class RelativeErrorGINO:
     def __init__(self, model):
         self.model = model
         
-    def __call__(self, data):
-        x = self.model(data)
-        res = x - data.y
-        err = ((data.mask*res**2).sum() / 
-               (data.mask*data.y**2).sum())**0.5
+    def __call__(self, dataset):
+        batch = Batch.from_data_list(dataset.graph)
+        batch = batch.to(dataset.device)
+        pre = self.model(batch)
+        res = pre - batch.y
+        err = ((batch.mask*res**2).sum() / 
+               (batch.mask*batch.y**2).sum())**0.5
         return err
