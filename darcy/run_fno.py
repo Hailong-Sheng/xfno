@@ -1,6 +1,4 @@
 import torch
-import numpy as np
-
 import xfno
 
 def main():
@@ -26,10 +24,9 @@ def main():
     
     # model
     input_scale = [train_dataset.param.mean(), train_dataset.param.std()]
-    model = xfno.model.FNO2d(config.model.in_channel, config.model.out_channel,
-                             config.model.width, config.model.mode1, config.model.mode2,
-                             config.model.padding, config.model.layer_num,
-                             input_scale=input_scale)
+    model = xfno.model.FNO2d(config.model.input_channel, config.model.output_channel,
+        config.model.width, config.model.mode1_num, config.model.mode2_num,
+        config.model.padding, config.model.layer_num, input_scale=input_scale)
 
     # loss
     loss = xfno.loss.Loss(model=model)
@@ -44,8 +41,10 @@ def main():
                                  valid_dataset=valid_dataset, 
                                  model=model, loss=loss, error=error,
                                  optimizer=optimizer, scheduler=scheduler,
-                                 epoch_num=config.train.epoch_num)
+                                 epoch_num=config.train.epoch_num,
+                                 ckpt_name=config.ckpt.name, ckpt_dirt=config.ckpt.dirt,
+                                 result_dirt=config.output.dirt, device=config.device)
     trainer.train()
-    
+
 if __name__ == "__main__":
     main()

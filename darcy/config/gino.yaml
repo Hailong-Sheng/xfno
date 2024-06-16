@@ -24,27 +24,29 @@ data:
 
 model:
   # number of input channels
-  in_channel: 1
+  input_channel: 1
   # number of output channels
-  out_channel: 1
+  output_channel: 1
   # number of hidden channels
   width: 32
   # fourier modes
-  mode1: 12
+  mode1_num: 12
   # fourier modes
-  mode2: 12
+  mode2_num: 12
   # padding num
   padding: 9
   # layer num
-  layer_num: 4
-  # kernel width
-  ker_width: 100
-  # kernel depth
-  ker_depth: 1
-  # edge attribute dim
-  edge_attr_dim: 6
-  # node attribute dim
-  node_attr_dim: 1
+  fno_layer_num: 4
+  # edge input dim
+  edge_input_dim: 6
+  # node input dim
+  node_input_dim: 1
+  # node output dim
+  node_output_dim: 1
+  # edge hidden dim
+  edge_hidden_dim: 100
+  # layer num in gno
+  gno_layer_num: 1
 
 train:
   # learinng rate
@@ -55,6 +57,16 @@ train:
   gamma: 0.99
   # number of training epoch
   epoch_num: 10000
+
+ckpt:
+  # name of checkpoint
+  name: gino
+  # directory for storing checkpoint
+  dirt: ./checkpoint
+
+output:
+  # directory for storing output
+  dirt: ./result
 
 # computing device
 device: cuda

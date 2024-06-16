@@ -1,6 +1,4 @@
 import torch
-import numpy as np
-
 import xfno
 
 def main():
@@ -31,19 +29,21 @@ def main():
     train_dataloader = xfno.dataset.PyGDataLoader(train_dataset_gino, config.data.batch_size)
     
     # encoder
-    encoder = xfno.model.KernelNN(config.model.width, config.model.ker_width, config.model.ker_depth,
-                                  config.model.edge_attr_dim, in_width=config.model.node_attr_dim
-                                  ).to(config.device)
+    encoder = xfno.model.GNO(config.model.node_input_dim, config.model.edge_input_dim,
+                             config.model.node_output_dim,
+                             config.model.width, config.model.edge_hidden_dim,
+                             config.model.gno_layer_num).to(config.device)
     
     # process
-    fno = xfno.model.FNO2d(config.model.in_channel, config.model.out_channel,
-                           config.model.width, config.model.mode1, config.model.mode2,
-                           config.model.padding, config.model.layer_num)
+    fno = xfno.model.FNO2d(config.model.input_channel, config.model.output_channel,
+                           config.model.width, config.model.mode1_num, config.model.mode2_num,
+                           config.model.padding, config.model.fno_layer_num)
     
     # decoder
-    decoder = xfno.model.KernelNN(config.model.width, config.model.ker_width, config.model.ker_depth,
-                                  config.model.edge_attr_dim, in_width=config.model.node_attr_dim
-                                  ).to(config.device)
+    decoder = xfno.model.GNO(config.model.node_input_dim, config.model.edge_input_dim,
+                             config.model.node_output_dim,
+                             config.model.width, config.model.edge_hidden_dim,
+                             config.model.gno_layer_num).to(config.device)
     
     # model
     input_scale = [train_dataset.param.mean(), train_dataset.param.std()]
@@ -65,7 +65,9 @@ def main():
                                  valid_dataset=valid_dataset_gino, 
                                  model=model, loss=loss, error=error,
                                  optimizer=optimizer, scheduler=scheduler,
-                                 epoch_num=config.train.epoch_num)
+                                 epoch_num=config.train.epoch_num,
+                                 ckpt_name=config.ckpt.name, ckpt_dirt=config.ckpt.dirt,
+                                 result_dirt=config.output.dirt, device=config.device)
     trainer.train()
 
 if __name__ == '__main__':

@@ -24,15 +24,15 @@ data:
 
 model:
   # number of input channels
-  in_channel: 1
+  input_channel: 1
   # number of output channels
-  out_channel: 1
+  output_channel: 1
   # number of hidden channels
   width: 32
   # fourier modes
-  mode1: 12
+  mode1_num: 12
   # fourier modes
-  mode2: 12
+  mode2_num: 12
   # padding num
   padding: 9
   # layer num
@@ -47,6 +47,16 @@ train:
   gamma: 0.99
   # number of training epoch
   epoch_num: 10000
+
+ckpt:
+  # name of checkpoint
+  name: geo_fno
+  # directory for storing checkpoint
+  dirt: ./checkpoint
+
+output:
+  # directory for storing output
+  dirt: ./result
 
 # computing device
 device: cuda

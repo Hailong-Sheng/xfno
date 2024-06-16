@@ -23,18 +23,17 @@ def main():
                                          config.data.load_cache, device=config.device)
     
     train_dataloader = xfno.dataset.DataLoader(train_dataset, config.data.batch_size)
-
+    
     # model
     input_scale = [train_dataset.param.mean(), train_dataset.param.std()]
-    model = xfno.model.FNO2d(config.model.in_channel, config.model.out_channel,
-                             config.model.width, config.model.mode1, config.model.mode2,
-                             config.model.padding, config.model.layer_num,
-                             input_scale=input_scale)
+    model = xfno.model.FNO2d(config.model.input_channel, config.model.output_channel,
+        config.model.width, config.model.mode1_num, config.model.mode2_num,
+        config.model.padding, config.model.layer_num, input_scale=input_scale)
     
     # loss
     loss = xfno.loss.LossXFNO(model=model, device=config.device)
     error = xfno.loss.RelativeError(model=model)
-
+    
     # train
     optimizer = torch.optim.Adam(model.parameters(), lr=config.train.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
@@ -44,8 +43,21 @@ def main():
                                  valid_dataset=valid_dataset, 
                                  model=model, loss=loss, error=error,
                                  optimizer=optimizer, scheduler=scheduler,
-                                 epoch_num=config.train.epoch_num)
+                                 epoch_num=config.train.epoch_num,
+                                 ckpt_name=config.ckpt.name, ckpt_dirt=config.ckpt.dirt,
+                                 result_dirt=config.output.dirt, device=config.device)
     trainer.train()
+    
+    # save result
+    valid_dataset.pred = model(valid_dataset.param)
+    param = valid_dataset.param.reshape(valid_dataset.param_size,valid_dataset.mesh.c_size)
+    label = valid_dataset.label.reshape(valid_dataset.param_size,valid_dataset.mesh.c_size)
+    pred = valid_dataset.pred.reshape(valid_dataset.param_size,valid_dataset.mesh.c_size)
+    mask = valid_dataset.mask.reshape(1,valid_dataset.mesh.c_size)
+    np.savetxt(f'{config.output.dirt}/param.txt',param.cpu().detach().numpy())
+    np.savetxt(f'{config.output.dirt}/label.txt',label.cpu().detach().numpy())
+    np.savetxt(f'{config.output.dirt}/pred.txt',pred.cpu().detach().numpy())
+    np.savetxt(f'{config.output.dirt}/mask.txt',mask.cpu().detach().numpy())
 
 if __name__ == "__main__":
     main()

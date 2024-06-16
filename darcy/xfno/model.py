@@ -2,10 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import copy
-from torch.nn import Parameter
 from torch_geometric.data import Data as PygData
-from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.inits import reset, uniform
+
+from .layer import MLP, MLPConv2d, SpectralConv2d, GraphConv
 
 class FCNet(torch.nn.Module):
     def __init__(self, layers, bounds):
@@ -13,7 +12,7 @@ class FCNet(torch.nn.Module):
         self.layers = layers
         self.layers_hid_num = len(layers)-2
         self.bounds = bounds
-
+        
         fc = []
         for i in range(self.layers_hid_num):
             fc.append(torch.nn.Linear(self.layers[i],self.layers[i+1]))
@@ -36,127 +35,55 @@ class FCNet(torch.nn.Module):
         x = self.fc[-1](x)
         return x.reshape(x_shape[0],x_shape[2],x_shape[3],self.layers[-1]).permute(0,3,1,2)
 
-class SpectralConv2d(nn.Module):
-    """ 2D Fourier layer
-    Args:
-        in_channel: number of input channels
-        out_channel: number of output channels
-        mode1 : number of Fourier modes to multiply in first dimension, at most floor(N/2) + 1
-        mode2 : number of Fourier modes to multiply in second dimension, at most floor(N/2) + 1
-    """
-    def __init__(self, in_channel: int, out_channel: int, mode1: int, mode2: int):
-        super().__init__()
-        self.in_channel = in_channel
-        self.out_channel = out_channel
-        self.mode1 = mode1
-        self.mode2 = mode2
-
-        self.scale = 1 / (in_channel * out_channel)
-        self.weight1 = nn.Parameter(
-            torch.empty(in_channel, out_channel, self.mode1, self.mode2, 2)
-        )
-        self.weight2 = nn.Parameter(
-            torch.empty(in_channel, out_channel, self.mode1, self.mode2, 2)
-        )
-        self.reset_parameters()
-
-    def compl_mul2d(self, input: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
-        # (batch, in_channel, x, y), (in_channel, out_channel, x, y) -> (batch, out_channel, x, y)
-        cweight = torch.view_as_complex(weight)
-        return torch.einsum("bixy,ioxy->boxy", input, cweight)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size = x.shape[0]
-
-        # Compute Fourier coeffcients up to factor of e^(-something constant)
-        x_ft = torch.fft.rfft2(x)
-
-        # Multiply relevant Fourier modes
-        out_ft = torch.zeros(batch_size,self.out_channel,x.size(-2),x.size(-1)//2+1,
-                             dtype=torch.cfloat,device=x.device)
-        out_ft[:,:,:self.mode1,:self.mode2] = self.compl_mul2d(
-            x_ft[:,:,:self.mode1,:self.mode2], self.weight1)
-        out_ft[:,:,-self.mode1:,:self.mode2] = self.compl_mul2d(
-            x_ft[:,:,-self.mode1:,:self.mode2], self.weight2)
-
-        # Return to physical space
-        x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
-        return x
-
-    def reset_parameters(self):
-        """Reset spectral weight with distribution scale*U(0,1)"""
-        self.weight1.data = self.scale * torch.rand(self.weight1.data.shape)
-        self.weight2.data = self.scale * torch.rand(self.weight2.data.shape)
-
-class MLPLayer(nn.Module):
-    """ channel-wise fully-connected like layer with 2d convolutions
-    Args:
-        in_channel: number of input channels
-        out_channel: number of output channels
-        mid_channel: number of middle channels
-        actv: activation function
-    """
-    def __init__(self, in_channel, out_channel, mid_channel, actv=F.gelu):
-        super(MLPLayer, self).__init__()
-        self.in_channel = in_channel
-        self.out_channel = out_channel
-        self.mid_channel = mid_channel
-        self.actv = actv
-
-        self.mlp1 = nn.Conv2d(self.in_channel, self.mid_channel, 1)
-        self.mlp2 = nn.Conv2d(self.mid_channel, self.out_channel, 1)
-
-    def forward(self, x):
-        x = self.mlp1(x)
-        x = self.actv(x)
-        x = self.mlp2(x)
-        return x
-
 class FNO2d(nn.Module):
-    """ 2D Fourier neural operator
-    Args:
-        in_channel: number of input channels
-        out_channel: number of output channels
-        width: number of hidden channels
-        layer_num: number of spectral convolution layers
-        mode_num: number of Fourier modes with learnable weight
-        padding: padding size for FFT calculations
-        actv: Activation function, by default Activation.GELU
-        cord_feat: use coordinate meshgrid as additional input feature
-    """
-    def __init__(self, in_channel: int=1, out_channel: int=1, width: int=32, 
-                 mode1: int=16, mode2: int=16, padding: int=8, layer_num: int=4, 
-                 actv=F.gelu, input_scale=None, cord_feat: bool=True) -> None:
+    """ 2D Fourier neural operator """
+    def __init__(self, input_channel: int=1, output_channel: int=1, width: int=32, 
+                 mode1_num: int=16, mode2_num: int=16, padding: int=8, layer_num: int=4, 
+                 activation=nn.GELU(), input_scale=None, cord_feat: bool=True) -> None:
+        """ initialization
+        args:
+            input_channel: number of input channels
+            output_channel: number of output channels
+            width: number of hidden channels
+            mode1_num: number of Fourier modes in the 1th dimension
+            mode2_num: number of Fourier modes in the 2th dimension
+            padding: padding size
+            layer_num: number of Fourier layers
+            activation: activation function
+            input_scale: scale of input
+            cord_feat: whether to use coordinate as additional input feature
+        """
         super().__init__()
-        self.in_channel = in_channel
-        self.out_channel = out_channel
+        self.input_channel = input_channel
+        self.output_channel = output_channel
         self.width = width
-        self.mode1 = mode1
-        self.mode2 = mode2
+        self.mode1_num = mode1_num
+        self.mode2_num = mode2_num
         self.padding = padding
         self.layer_num = layer_num
-        self.actv = actv
+        self.activation = activation
         self.input_scale = input_scale
         self.cord_feat = cord_feat    
 
         # add relative coordinate feature
         if self.cord_feat:
-            self.in_channel += 2
+            self.input_channel += 2
         
         # encoder layer
-        self.encoder = nn.Linear(self.in_channel, self.width)
+        self.encoder = nn.Linear(self.input_channel, self.width)
         
         # convolutional layer
-        self.spconv_layer = nn.ModuleList()
         self.conv_layer = nn.ModuleList()
+        self.spconv_layer = nn.ModuleList()
         for _ in range(self.layer_num):
-            self.spconv_layer.append(
-                SpectralConv2d(self.width, self.width, self.mode1, self.mode2)
-            )
             self.conv_layer.append(nn.Conv2d(self.width, self.width, 1))
+            self.spconv_layer.append(
+                SpectralConv2d(self.width, self.width, self.mode1_num, self.mode2_num)
+            )
 
         # decoder layer
-        self.decoder = MLPLayer(self.width, self.out_channel, self.width*4, self.actv)
+        self.decoder = MLPConv2d(self.width, self.output_channel, self.width*4, 1,
+                                 self.activation)
 
     def meshgrid(self, shape, device: torch.device):
         batch_size, size_x, size_y = shape[0], shape[2], shape[3]
@@ -170,7 +97,7 @@ class FNO2d(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         assert (
             x.dim() == 4
-        ), "Only 4D tensors [batch, in_channel, grid_x, grid_y] accepted for 2D FNO"
+        ), "Only 4D tensors [batch, input_channel, grid_x, grid_y] accepted for 2D FNO"
 
         # normalization
         if self.input_scale is not None:
@@ -181,7 +108,7 @@ class FNO2d(nn.Module):
             cord_feat = self.meshgrid(list(x.shape), x.device)
             x = torch.cat((x, cord_feat), dim=1)
 
-        # encoder layer
+        # encode
         x = x.permute(0, 2, 3, 1)
         x = self.encoder(x)
         x = x.permute(0, 3, 1, 2)
@@ -189,30 +116,30 @@ class FNO2d(nn.Module):
         # add padding (left, right, top, bottom)
         x = F.pad(x, [0,self.padding,0,self.padding])
 
-        # spectral layers
+        # process
         for k, c in enumerate(zip(self.conv_layer, self.spconv_layer)):
             conv, spconv = c
             if k < self.layer_num-1:
-                x = self.actv(conv(x) + spconv(x))
+                x = self.activation(conv(x) + spconv(x))
             else:
                 x = conv(x) + spconv(x)
 
         # remove padding
         x = x[..., :-self.padding, :-self.padding]
 
-        # decorder layer
+        # decode
         x = self.decoder(x)
         return x
 
 class FixedConv2D(nn.Module):
     def __init__(self):
         super(FixedConv2D, self).__init__()
-        self.in_channel = 1
+        self.input_channel = 1
         self.ou_channel = 3**2
         self.kernel_size = 3
         self.padding = 1
 
-        self.conv = nn.Conv2d(self.in_channel, self.ou_channel,
+        self.conv = nn.Conv2d(self.input_channel, self.ou_channel,
             kernel_size=self.kernel_size, padding=self.padding)
         
         self.conv.weight.data = torch.zeros(self.ou_channel,1,3,3)
@@ -228,153 +155,55 @@ class FixedConv2D(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
-class SpectralConv2d(nn.Module):
-    """ 2D Fourier layer
-    Args:
-        in_channel: number of input channels
-        out_channel: number of output channels
-        mode1 : number of Fourier modes to multiply in first dimension, at most floor(N/2) + 1
-        mode2 : number of Fourier modes to multiply in second dimension, at most floor(N/2) + 1
-    """
-    def __init__(self, in_channel: int, out_channel: int, mode1: int, mode2: int):
-        super().__init__()
-        self.in_channel = in_channel
-        self.out_channel = out_channel
-        self.mode1 = mode1
-        self.mode2 = mode2
+class GNO(torch.nn.Module):
+    """ graph neural operator """
+    def __init__(self, node_input_dim: int=1, edge_input_dim: int=1, node_output_dim: int=1,
+                 node_hidden_dim: int=32, edge_hidden_dim: int=32, layer_num: int=1) -> None:
+        """ initialization
+        args:
+            node_input_dim: dimension of node in input layer
+            edge_input_dim: dimension of edge in input layer
+            node_output_dim: dimension of node in output layer
+            node_hidden_dim: dimension of node in hidden layer
+            edge_hidden_dim: dimension of edge in hidden layer
+            layer_num: number of hidden layer
+        """
+        super(GNO, self).__init__()
+        self.node_input_dim = node_input_dim
+        self.edge_input_dim = edge_input_dim
+        self.node_output_dim = node_output_dim
+        self.node_hidden_dim = node_hidden_dim
+        self.edge_hidden_dim = edge_hidden_dim
+        self.layer_num = layer_num
 
-        self.scale = 1 / (in_channel * out_channel)
-        self.weight1 = nn.Parameter(
-            torch.empty(in_channel, out_channel, self.mode1, self.mode2, 2)
-        )
-        self.weight2 = nn.Parameter(
-            torch.empty(in_channel, out_channel, self.mode1, self.mode2, 2)
-        )
-        self.reset_parameters()
+        self.node_proj_1 = torch.nn.Linear(self.node_input_dim, self.node_hidden_dim)
+        self.edge_proj = MLP(self.edge_input_dim, self.node_hidden_dim**2,
+                             self.edge_hidden_dim, layer_num=2)
+        self.conv = GraphConv(self.node_hidden_dim, self.node_hidden_dim, aggr='mean')
+        self.node_proj_2 = torch.nn.Linear(self.node_hidden_dim, self.node_output_dim)
 
-    def compl_mul2d(self, input: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
-        # (batch, in_channel, x, y), (in_channel, out_channel, x, y) -> (batch, out_channel, x, y)
-        cweight = torch.view_as_complex(weight)
-        return torch.einsum("bixy,ioxy->boxy", input, cweight)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size = x.shape[0]
-
-        # Compute Fourier coeffcients up to factor of e^(-something constant)
-        x_ft = torch.fft.rfft2(x)
-
-        # Multiply relevant Fourier modes
-        out_ft = torch.zeros(batch_size,self.out_channel,x.size(-2),x.size(-1)//2+1,
-                             dtype=torch.cfloat,device=x.device)
-        out_ft[:,:,:self.mode1,:self.mode2] = self.compl_mul2d(
-            x_ft[:,:,:self.mode1,:self.mode2], self.weight1)
-        out_ft[:,:,-self.mode1:,:self.mode2] = self.compl_mul2d(
-            x_ft[:,:,-self.mode1:,:self.mode2], self.weight2)
-
-        # Return to physical space
-        x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
-        return x
-
-    def reset_parameters(self):
-        """Reset spectral weight with distribution scale*U(0,1)"""
-        self.weight1.data = self.scale * torch.rand(self.weight1.data.shape)
-        self.weight2.data = self.scale * torch.rand(self.weight2.data.shape)
-
-class DenseNet(torch.nn.Module):
-    def __init__(self, layers, nonlinearity, out_nonlinearity=None, normalize=False):
-        super(DenseNet, self).__init__()
-        self.n_layers = len(layers) - 1
-        assert self.n_layers >= 1
-
-        self.layers = nn.ModuleList()
-
-        for j in range(self.n_layers):
-            self.layers.append(nn.Linear(layers[j], layers[j+1]))
-            if j != self.n_layers - 1:
-                if normalize:
-                    self.layers.append(nn.BatchNorm1d(layers[j+1]))
-                self.layers.append(nonlinearity())
-
-        if out_nonlinearity is not None:
-            self.layers.append(out_nonlinearity())
-
-    def forward(self, x):
-        for _, l in enumerate(self.layers):
-            x = l(x)
-        return x
-
-class NNConv(MessagePassing):
-    def __init__(self, in_channels, out_channels, nn, aggr='add',
-                 root_weight=True, bias=True, **kwargs):
-        super(NNConv, self).__init__(aggr=aggr, **kwargs)
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.nn = nn
-        self.aggr = aggr
-
-        if root_weight:
-            self.root = Parameter(torch.Tensor(in_channels, out_channels))
-        else:
-            self.register_parameter('root', None)
-
-        if bias:
-            self.bias = Parameter(torch.Tensor(out_channels))
-        else:
-            self.register_parameter('bias', None)
-
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        reset(self.nn)
-        size = self.in_channels
-        uniform(size, self.root)
-        uniform(size, self.bias)
-
-    def forward(self, x, edge_index, edge_attr):
-        """"""
-        x = x.unsqueeze(-1) if x.dim() == 1 else x
-        pseudo = edge_attr.unsqueeze(-1) if edge_attr.dim() == 1 else edge_attr
-        return self.propagate(edge_index, x=x, pseudo=pseudo)
-
-    def message(self, x_j, pseudo):
-        weight = self.nn(pseudo).view(-1, self.in_channels, self.out_channels)
-        return torch.matmul(x_j.unsqueeze(1), weight).squeeze(1)
-
-    def update(self, aggr_out, x):
-        if self.root is not None:
-            aggr_out = aggr_out + torch.mm(x, self.root)
-        if self.bias is not None:
-            aggr_out = aggr_out + self.bias
-        return aggr_out
-
-    def __repr__(self):
-        return '{}({}, {})'.format(self.__class__.__name__, self.in_channels,
-                                   self.out_channels)
-
-class KernelNN(torch.nn.Module):
-    def __init__(self, width_node, width_kernel, depth, ker_in, in_width=1, out_width=1):
-        super(KernelNN, self).__init__()
-        self.depth = depth
-
-        self.fc1 = torch.nn.Linear(in_width, width_node)
-
-        kernel = DenseNet([ker_in, width_kernel, width_kernel, width_node**2], torch.nn.ReLU)
-        self.conv1 = NNConv(width_node, width_node, kernel, aggr='mean')
-
-        self.fc2 = torch.nn.Linear(width_node, 1)
-
-    def forward(self, data):
+    def forward(self, data: PygData) -> torch.Tensor:
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
-        x = self.fc1(x)
-        for k in range(self.depth):
-            x = F.relu(self.conv1(x, edge_index, edge_attr))
-
-        x = self.fc2(x)
+        x = self.node_proj_1(x)
+        edge_attr = self.edge_proj(edge_attr)
+        for _ in range(self.layer_num):
+            x = F.relu(self.conv(x, edge_index, edge_attr))
+        x = self.node_proj_2(x)
         return x
 
 class GINO(torch.nn.Module):
+    """ geometry infromed neural operator """
     def __init__(self, encoder, processer, decoder, input_scale, c_size, r_size, nx):
+        """ initialization
+        args:
+            encoder: encoder
+            processer: processer
+            decoder: decoder
+            input_scale: scale of input
+            c_size: size of the original mesh
+            r_size: size of the transformed mesh
+            nx: shape of the transformed mesh
+        """
         super(GINO, self).__init__()
         self.encoder = encoder
         self.processer = processer
@@ -384,18 +213,21 @@ class GINO(torch.nn.Module):
         self.r_size = r_size
         self.nx = nx
 
-    def forward(self, graph):
+    def forward(self, graph: PygData) -> torch.Tensor:
         graph = copy.deepcopy(graph)
 
+        # normalize
         batch_size = int(graph.x.shape[0]/(self.c_size+self.r_size))
         graph.x = (graph.x-self.input_scale[0]) / self.input_scale[1]
 
+        # encode
         x = self.encoder(graph)
         
+        # process
         x = x.reshape(batch_size,self.c_size+self.r_size)
         x = x[:,self.c_size:]
         x = x.reshape(batch_size,1,self.nx[0],self.nx[1])
-
+        
         x = self.processer(x)
         
         x = x.reshape(batch_size,self.r_size)
@@ -403,6 +235,7 @@ class GINO(torch.nn.Module):
                        x],1)
         x = x.reshape(-1,1)
         
+        # decode
         edge_index = graph.edge_index
         edge_index = torch.flip(edge_index, dims=[0])
         batch = PygData(x=x, y=graph.y, mask=graph.mask,

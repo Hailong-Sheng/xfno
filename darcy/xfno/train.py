@@ -2,10 +2,13 @@ import os
 import torch
 import numpy as np
 import time
+from datetime import datetime
 
 class Trainer():
     def __init__(self, train_dataloader, valid_dataset, model, loss, error,
                  optimizer, scheduler, epoch_num: int=1000, print_freq: int=10,
+                 ckpt_freq: int=10, ckpt_name: str='checkpoint',
+                 ckpt_dirt: str='checkpoint', result_dirt: str='./result',
                  device: str='cuda'):
         self.train_dataloader = train_dataloader
         self.valid_dataset = valid_dataset
@@ -16,6 +19,10 @@ class Trainer():
         self.scheduler = scheduler
         self.epoch_num = epoch_num
         self.print_freq = print_freq
+        self.ckpt_freq = ckpt_freq
+        self.ckpt_name = ckpt_name
+        self.ckpt_dirt = ckpt_dirt
+        self.result_dirt = result_dirt
         self.device = device
 
         self.model = self.model.to(self.device)
@@ -34,7 +41,12 @@ class Trainer():
                 self.optimizer.step()
                 self.scheduler.step()
             
-            # print loss stats
+            # save checkpoint
+            if epoch % self.ckpt_freq == 0:
+                os.makedirs(self.ckpt_dirt, exist_ok=True)
+                torch.save(self.model.state_dict(), f'{self.ckpt_dirt}/{self.ckpt_name}.pth')
+            
+            # print
             if epoch % self.print_freq == 0:
                 error = self.error(self.valid_dataset)
                 error_history.append(torch.unsqueeze(error,dim=0).cpu().detach())
@@ -47,8 +59,10 @@ class Trainer():
 
                 st = time.time()
             
-        os.makedirs('result', exist_ok=True)
-        np.savetxt('result/error_history.txt', np.array(error_history))
+        os.makedirs(self.result_dirt, exist_ok=True)
+        current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        np.savetxt(f'{self.result_dirt}/error_history_{self.ckpt_name}_{current_datetime}.txt',
+                   np.array(error_history))
 
 class TrainerCT():
     def __init__(self, train_dataloader, model, loss, optimizer, scheduler, 
