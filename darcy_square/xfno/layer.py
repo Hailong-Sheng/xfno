@@ -1,9 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn import Parameter
-from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.inits import reset, uniform
 
 class MLP(torch.nn.Module):
     """ multi-layer perceptron """
@@ -141,64 +137,3 @@ class SpectralConv2d(nn.Module):
         # return to physical space
         x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
         return x
-
-class GraphConv(MessagePassing):
-    """ graph convolution layer """
-    def __init__(self, node_input_dim: int=1, node_output_dim: int=1, aggr: str='add', 
-                 root_weight: bool=True, bias: bool=True) -> None:
-        """ initialization
-        args:
-            node_input_dim: dimension of input node
-            node_output_dim: dimension of output node
-            edge_proj: edge projection
-            aggr: aggregation manner
-        """
-        super(GraphConv, self).__init__(aggr=aggr)
-        self.node_input_dim = node_input_dim
-        self.node_output_dim = node_output_dim
-        self.aggr = aggr
-
-        if root_weight:
-            self.root = Parameter(torch.Tensor(self.node_input_dim, self.node_output_dim))
-        else:
-            self.register_parameter('root', None)
-
-        if bias:
-            self.bias = Parameter(torch.Tensor(self.node_output_dim))
-        else:
-            self.register_parameter('bias', None)
-
-        self.reset_parameters()
-
-    def reset_parameters(self) -> None:
-        uniform(self.node_input_dim, self.root)
-        uniform(self.node_input_dim, self.bias)
-
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor
-                ) -> torch.Tensor:
-        """ forward propagation
-        args:
-            x: node attribute
-            edge_index: edge index
-            edge_attr: edge attribute
-        returns:
-            output tensor
-        """
-        x = x.unsqueeze(-1) if x.dim() == 1 else x
-        edge_attr = edge_attr.unsqueeze(-1) if edge_attr.dim() == 1 else edge_attr
-        return self.propagate(edge_index, x=x, edge_attr=edge_attr)
-
-    def message(self, x_j: torch.Tensor, edge_attr: torch.Tensor) -> torch.Tensor:
-        weight = edge_attr.view(-1, self.node_input_dim, self.node_output_dim)
-        return torch.matmul(x_j.unsqueeze(1), weight).squeeze(1)
-
-    def update(self, aggr_out: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        if self.root is not None:
-            aggr_out = aggr_out + torch.mm(x, self.root)
-        if self.bias is not None:
-            aggr_out = aggr_out + self.bias
-        return aggr_out
-    
-    def __repr__(self) -> None:
-        return '{}({}, {})'.format(self.__class__.__name__, self.node_input_dim,
-                                   self.node_output_dim)

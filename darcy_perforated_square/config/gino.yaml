@@ -1,6 +1,6 @@
 geo:
   # bounds of domain
-  bounds: [-1.00,1.00, -1.00,1.00]
+  bounds: [-1.0,1.0, -1.0,1.0]
   # center of circle
   center: [0.0,0.0]
   # radius of circle
@@ -15,12 +15,14 @@ data:
   name: darcy
   # directory for storing the dataset
   dirt: ./dataset
-  # number of parameter
-  param_size: 100
+  # size of training set
+  train_size: 300
+  # size of validation set
+  valid_size: 100
   # whether to load cache
-  load_cache: False
+  load_cache: True
   # batch size
-  batch_size: 16
+  batch_size: 30
 
 model:
   # number of input channels
@@ -36,21 +38,31 @@ model:
   # padding num
   padding: 9
   # layer num
-  layer_num: 4
+  fno_layer_num: 4
+  # edge input dim
+  edge_input_dim: 6
+  # node input dim
+  node_input_dim: 1
+  # node output dim
+  node_output_dim: 1
+  # edge hidden dim
+  edge_hidden_dim: 100
+  # layer num in gno
+  gno_layer_num: 1
 
 train:
   # learinng rate
   lr: 0.001
   # scheduler step size
-  step_size: 100
+  step_size: 30
   # scheduler dacay rate
-  gamma: 0.99
+  gamma: 0.98
   # number of training epoch
-  epoch_num: 10000
+  epoch_num: 3000
 
 ckpt:
   # name of checkpoint
-  name: xfno
+  name: gino
   # directory for storing checkpoint
   dirt: ./checkpoint
 

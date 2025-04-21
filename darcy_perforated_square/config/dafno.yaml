@@ -1,6 +1,6 @@
 geo:
   # bounds of domain
-  bounds: [-1.00,1.00, -1.00,1.00]
+  bounds: [-1.0,1.0, -1.0,1.0]
   # center of circle
   center: [0.0,0.0]
   # radius of circle
@@ -15,24 +15,26 @@ data:
   name: darcy
   # directory for storing the dataset
   dirt: ./dataset
-  # number of parameter
-  param_size: 100
+  # size of training set
+  train_size: 300
+  # size of validation set
+  valid_size: 100
   # whether to load cache
   load_cache: True
   # batch size
-  batch_size: 16
+  batch_size: 30
 
 model:
   # number of input channels
-  input_channel: 1
+  input_channel: 3
   # number of output channels
   output_channel: 1
   # number of hidden channels
   width: 32
   # fourier modes
-  mode1_num: 12
+  mode1_num: 10
   # fourier modes
-  mode2_num: 12
+  mode2_num: 10
   # padding num
   padding: 9
   # layer num
@@ -42,15 +44,15 @@ train:
   # learinng rate
   lr: 0.001
   # scheduler step size
-  step_size: 100
+  step_size: 30
   # scheduler dacay rate
-  gamma: 0.99
+  gamma: 0.98
   # number of training epoch
-  epoch_num: 10000
+  epoch_num: 3000
 
 ckpt:
   # name of checkpoint
-  name: fno
+  name: dafno
   # directory for storing checkpoint
   dirt: ./checkpoint
 

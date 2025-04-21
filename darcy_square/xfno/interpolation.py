@@ -1,7 +1,7 @@
-import torch
+import numpy as np
 
 class InterpolationFunction():
-    def __init__(self, geo, mesh, dtype):
+    def __init__(self, geo, mesh, dtype=np.float32):
         self.geo = geo
         self.mesh = mesh
         self.dtype = dtype
@@ -9,8 +9,8 @@ class InterpolationFunction():
         # interpolation node
         print('Genrating interpolation node ...')
         self.n_size = 3**2
-        self.x = torch.zeros(self.mesh.c_size,self.n_size,self.mesh.dim)
-        self.i = torch.zeros(self.mesh.c_size,self.n_size).long()
+        self.x = np.zeros([self.mesh.c_size,self.n_size,self.mesh.dim])
+        self.i = np.zeros([self.mesh.c_size,self.n_size], np.int32)
         for i in range(self.mesh.nx[0]):
             for j in range(self.mesh.nx[1]):
                 m = i*self.mesh.nx[1] + j
@@ -22,12 +22,11 @@ class InterpolationFunction():
         self.intp_coef_regular_cell()
         
     def intp_node(self, idx):
-        n_size = 3**2
-        xi = torch.zeros(n_size,self.mesh.dim)
-        ii = torch.zeros(n_size).long()
+        xi = np.zeros([self.n_size,self.mesh.dim])
+        ii = np.zeros(self.n_size, np.int32)
 
         dir = [[-1,-1],[-1, 0],[-1, 1], [0,-1],[0, 0],[0, 1], [1,-1],[1, 0],[1, 1]]
-        dir = torch.tensor(dir).reshape(n_size,self.mesh.dim)
+        dir = np.array(dir).reshape(self.n_size,self.mesh.dim)
 
         # regular point
         ix = idx[0]+dir[:,0]; iy = idx[1]+dir[:,1]
@@ -42,8 +41,8 @@ class InterpolationFunction():
         idx1 = ~idx1
         m = idx[0]*self.mesh.nx[1] + idx[1]
         x1 = self.mesh.c_x[m,:]
-        x1 = x1.reshape(1,self.mesh.dim).repeat(n_size,1)
-        x2 = x1 + torch.tensor([self.mesh.hx[0],self.mesh.hx[1]]) * dir
+        x1 = x1.reshape(1,self.mesh.dim).repeat(self.n_size, axis=0)
+        x2 = x1 + np.array([self.mesh.hx[0],self.mesh.hx[1]]) * dir
 
         xi_tmp = self.geo.intersection(x1[idx1,:], x2[idx1,:])
 
@@ -53,21 +52,20 @@ class InterpolationFunction():
         return xi, ii
 
     def intp_coef_2(self, xi, x):
-        xi = xi.clone().to(torch.float64)
-        x = x.clone().to(torch.float64)
+        xi = xi.copy().astype(np.float64)
+        x = x.copy().astype(np.float64)
         
-        intp_n_size = 3**2
-        p = torch.zeros(intp_n_size,intp_n_size, dtype=torch.float64)
+        p = np.zeros([self.n_size,self.n_size], dtype=np.float64)
         for r in range(3):
             for s in range(3):
                 n = r*3 + s
                 p[:,n] = xi[:,0]**r * xi[:,1]**s
         b = p
-        b = torch.inverse(b)
+        b = np.linalg.inv(b)
         
-        pp = torch.zeros(1,intp_n_size, dtype=torch.float64)
-        pp_x0 = torch.zeros(1,intp_n_size, dtype=torch.float64)
-        pp_x1 = torch.zeros(1,intp_n_size, dtype=torch.float64)
+        pp = np.zeros([1,self.n_size], dtype=np.float64)
+        pp_x0 = np.zeros([1,self.n_size], dtype=np.float64)
+        pp_x1 = np.zeros([1,self.n_size], dtype=np.float64)
         for r in range(3):
             for s in range(3):
                 n = r*3 + s
@@ -81,19 +79,19 @@ class InterpolationFunction():
                 else:
                     pp_x1[0,n] = x[0]**r * s*x[1]**(s-1)
         
-        c = (pp @ b).reshape(intp_n_size)
-        c_x0 = (pp_x0 @ b).reshape(intp_n_size)
-        c_x1 = (pp_x1 @ b).reshape(intp_n_size)
+        c = (pp @ b).reshape(self.n_size)
+        c_x0 = (pp_x0 @ b).reshape(self.n_size)
+        c_x1 = (pp_x1 @ b).reshape(self.n_size)
         
-        c = c.clone().to(self.dtype)
-        c_x0 = c_x0.clone().to(self.dtype)
-        c_x1 = c_x1.clone().to(self.dtype)
+        c = c.copy().astype(self.dtype)
+        c_x0 = c_x0.copy().astype(self.dtype)
+        c_x1 = c_x1.copy().astype(self.dtype)
         return c, c_x0, c_x1
 
     def intp_coef_regular_cell(self):
-        self.re_c = torch.zeros(4,self.n_size)
-        self.re_c_x0 = torch.zeros(4,self.n_size)
-        self.re_c_x1 = torch.zeros(4,self.n_size)
+        self.re_c = np.zeros([4,self.n_size])
+        self.re_c_x0 = np.zeros([4,self.n_size])
+        self.re_c_x1 = np.zeros([4,self.n_size])
         flag = False
         for i in range(self.mesh.nx[0]):
             for j in range(self.mesh.nx[1]):

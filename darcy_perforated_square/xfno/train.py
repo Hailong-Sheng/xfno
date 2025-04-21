@@ -5,19 +5,18 @@ import time
 from datetime import datetime
 
 class Trainer():
-    def __init__(self, train_dataloader, valid_dataset, model, loss, error,
-                 optimizer, scheduler, epoch_num: int=1000, print_freq: int=10,
+    def __init__(self, train_dataloader, valid_dataloader, model, loss, error,
+                 optimizer, scheduler, print_freq: int=10,
                  ckpt_freq: int=10, ckpt_name: str='checkpoint',
                  ckpt_dirt: str='checkpoint', result_dirt: str='./result',
                  device: str='cuda'):
         self.train_dataloader = train_dataloader
-        self.valid_dataset = valid_dataset
+        self.valid_dataloader = valid_dataloader
         self.model = model
         self.loss = loss
         self.error = error
         self.optimizer = optimizer
         self.scheduler = scheduler
-        self.epoch_num = epoch_num
         self.print_freq = print_freq
         self.ckpt_freq = ckpt_freq
         self.ckpt_name = ckpt_name
@@ -27,19 +26,27 @@ class Trainer():
 
         self.model = self.model.to(self.device)
 
-    def train(self):
+    def train(self, epoch_num):
         error_history = []
-        st = time.time()
+        start_time = time.time()
 
-        for epoch in range(self.epoch_num):
+        for epoch in range(epoch_num):
+            self.model.train()
+
+            # forward and backward propagation
+            loss_sum, sample_sum = 0., 0
             for data in self.train_dataloader:
-                
-                # forward and backward propagation
                 self.optimizer.zero_grad()
                 loss = self.loss(data)
                 loss.backward()
                 self.optimizer.step()
-                self.scheduler.step()
+
+                loss_sum += loss.detach().cpu()
+                batch_size = data['param'].shape[0] if 'param' in data else len(data.ptr)-1
+                sample_sum += batch_size
+            
+            self.scheduler.step()
+            # print(self.optimizer.param_groups[0]['lr'])
             
             # save checkpoint
             if epoch % self.ckpt_freq == 0:
@@ -48,16 +55,25 @@ class Trainer():
             
             # print
             if epoch % self.print_freq == 0:
-                error = self.error(self.valid_dataset)
-                error_history.append(torch.unsqueeze(error,dim=0).cpu().detach())
+                loss_mean = loss_sum / sample_sum
 
-                info = (f'epoch: {epoch:10d} | loss: {loss.cpu().detach():10.3e} | ' + 
-                        f'error: {error.cpu().detach():10.3e}')
+                self.model.eval()
+                error_sum, sample_sum = 0., 0
+                for data in self.valid_dataloader:
+                    error = self.error(data)
+                    batch_size = data['param'].shape[0] if 'param' in data else len(data.ptr)-1
+                    sample_sum += batch_size
+                    error_sum += error.detach().cpu() * batch_size
+                error_mean = error_sum / sample_sum
+                error_history.append(error_mean)
+                
+                info = (f'epoch: {epoch:6d} | loss: {loss_mean:10.3e} | ' + 
+                        f'error: {error_mean:10.3e}')
                 if epoch >= 0:
-                    info += f', time: {time.time()-st:10.3e} s'
+                    info += f', time: {time.time()-start_time:10.3e} s'
                 print(info)
 
-                st = time.time()
+                start_time = time.time()
             
         os.makedirs(self.result_dirt, exist_ok=True)
         current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

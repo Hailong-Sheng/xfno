@@ -1,0 +1,66 @@
+geo:
+  # bounds of domain
+  bounds: [-1.0,1.0, -1.0,1.0]
+  # center of circle
+  center: [0.0,0.0]
+  # radius of circle
+  radius: 0.4
+
+mesh:
+  # size of mesh
+  nx: [20,20]
+
+data:
+  # name of the dataset
+  name: darcy
+  # directory for storing the dataset
+  dirt: ./dataset
+  # size of training set
+  train_size: 300
+  # size of validation set
+  valid_size: 100
+  # whether to load cache
+  load_cache: True
+  # batch size
+  batch_size: 30
+
+model:
+  # number of input channels
+  input_channel: 3
+  # number of output channels
+  output_channel: 1
+  # number of hidden channels
+  width: 32
+  # fourier modes
+  mode1_num: 12
+  # fourier modes
+  mode2_num: 12
+  # padding num
+  padding: 9
+  # layer num
+  layer_num: 4
+
+train:
+  # learinng rate
+  lr: 0.001
+  # scheduler step size
+  step_size: 30
+  # scheduler dacay rate
+  gamma: 0.98
+  # number of training epoch
+  epoch_num: 3000
+
+ckpt:
+  # name of checkpoint
+  name: xfno
+  # directory for storing checkpoint
+  dirt: ./checkpoint
+
+output:
+  # directory for storing output
+  dirt: ./result
+
+# computing device
+device: cuda
+# data type
+dtype: float32

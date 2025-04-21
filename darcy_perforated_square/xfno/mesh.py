@@ -1,4 +1,3 @@
-import torch
 import numpy as np
 import sklearn.metrics
 
@@ -17,15 +16,15 @@ class MeshCartesian():
         
         self.dim = self.bounds.shape[0]
         self.hx = (self.bounds[:,1]-self.bounds[:,0])/self.nx
-        self.xx = torch.linspace(self.bounds[0,0]+self.hx[0]/2,self.bounds[0,1]-self.hx[0]/2,self.nx[0])
-        self.yy = torch.linspace(self.bounds[1,0]+self.hx[1]/2,self.bounds[1,1]-self.hx[1]/2,self.nx[1])
+        self.xx = np.linspace(self.bounds[0,0]+self.hx[0]/2,self.bounds[0,1]-self.hx[0]/2,self.nx[0])
+        self.yy = np.linspace(self.bounds[1,0]+self.hx[1]/2,self.bounds[1,1]-self.hx[1]/2,self.nx[1])
         
         print('Genrating mesh ...')
 
         # cell center
         print('Genrating cell center ...')
         self.c_size = self.nx[0]*self.nx[1]
-        self.c_x = torch.zeros(self.c_size,self.dim)
+        self.c_x = np.zeros([self.c_size,self.dim])
         for i in range(self.nx[0]):
             for j in range(self.nx[1]):
                 m = i*self.nx[1] + j
@@ -37,10 +36,10 @@ class MeshCartesian():
         # cell corner
         # w: west; e: east; s: south; n: north
         print('Genrating cell corner ...')
-        self.cws_x = self.c_x + torch.tensor([-0.5*self.hx[0],-0.5*self.hx[1]])
-        self.cwn_x = self.c_x + torch.tensor([-0.5*self.hx[0], 0.5*self.hx[1]])
-        self.ces_x = self.c_x + torch.tensor([ 0.5*self.hx[0],-0.5*self.hx[1]])
-        self.cen_x = self.c_x + torch.tensor([ 0.5*self.hx[0], 0.5*self.hx[1]])
+        self.cws_x = self.c_x + np.array([-0.5*self.hx[0],-0.5*self.hx[1]])
+        self.cwn_x = self.c_x + np.array([-0.5*self.hx[0], 0.5*self.hx[1]])
+        self.ces_x = self.c_x + np.array([ 0.5*self.hx[0],-0.5*self.hx[1]])
+        self.cen_x = self.c_x + np.array([ 0.5*self.hx[0], 0.5*self.hx[1]])
         self.cws_loc = self.geo.location(self.cws_x)
         self.cwn_loc = self.geo.location(self.cwn_x)
         self.ces_loc = self.geo.location(self.ces_x)
@@ -48,10 +47,10 @@ class MeshCartesian():
 
         # neighbor cell
         print('Genrating neighbor cell ...')
-        self.nw_x = self.c_x + torch.tensor([-self.hx[0],0])
-        self.ne_x = self.c_x + torch.tensor([ self.hx[0],0])
-        self.ns_x = self.c_x + torch.tensor([0,-self.hx[1]])
-        self.nn_x = self.c_x + torch.tensor([0, self.hx[1]])
+        self.nw_x = self.c_x + np.array([-self.hx[0],0])
+        self.ne_x = self.c_x + np.array([ self.hx[0],0])
+        self.ns_x = self.c_x + np.array([0,-self.hx[1]])
+        self.nn_x = self.c_x + np.array([0, self.hx[1]])
         self.nw_loc = self.geo.location(self.nw_x)
         self.ne_loc = self.geo.location(self.ne_x)
         self.ns_loc = self.geo.location(self.ns_x)
@@ -59,12 +58,12 @@ class MeshCartesian():
         
         # cell face
         print('Genrating cell face ...')
-        self.fw_st = torch.zeros(self.c_size); self.fw_ed = torch.ones(self.c_size)
-        self.fe_st = torch.zeros(self.c_size); self.fe_ed = torch.ones(self.c_size)
-        self.fs_st = torch.zeros(self.c_size); self.fs_ed = torch.ones(self.c_size)
-        self.fn_st = torch.zeros(self.c_size); self.fn_ed = torch.ones(self.c_size)
-        self.fw_l = torch.zeros(self.c_size); self.fe_l = torch.zeros(self.c_size)
-        self.fs_l = torch.zeros(self.c_size); self.fn_l = torch.zeros(self.c_size)
+        self.fw_st = np.zeros(self.c_size); self.fw_ed = np.ones(self.c_size)
+        self.fe_st = np.zeros(self.c_size); self.fe_ed = np.ones(self.c_size)
+        self.fs_st = np.zeros(self.c_size); self.fs_ed = np.ones(self.c_size)
+        self.fn_st = np.zeros(self.c_size); self.fn_ed = np.ones(self.c_size)
+        self.fw_l = np.zeros(self.c_size); self.fe_l = np.zeros(self.c_size)
+        self.fs_l = np.zeros(self.c_size); self.fn_l = np.zeros(self.c_size)
         for i in range(self.nx[0]):
             for j in range(self.nx[1]):
                 m = i*self.nx[1] + j
@@ -131,12 +130,12 @@ class MeshCartesian():
                     tmp_x1 = self.ces_x[m:m+1,:] + self.fe_ed[m]*(self.cen_x[m:m+1,:]-self.ces_x[m:m+1,:])
                     self.fn_l[m] = (((tmp_x0-tmp_x1)**2).sum())**0.5
             
-        self.fw_x = torch.zeros(self.c_size,self.dim); self.fe_x = torch.zeros(self.c_size,self.dim)
-        self.fs_x = torch.zeros(self.c_size,self.dim); self.fn_x = torch.zeros(self.c_size,self.dim)
-        self.fw_n = torch.zeros(self.c_size,self.dim); self.fe_n = torch.zeros(self.c_size,self.dim)
-        self.fs_n = torch.zeros(self.c_size,self.dim); self.fn_n = torch.zeros(self.c_size,self.dim)
-        self.fw_loc = torch.zeros(self.c_size); self.fe_loc = torch.zeros(self.c_size)
-        self.fs_loc = torch.zeros(self.c_size); self.fn_loc = torch.zeros(self.c_size)
+        self.fw_x = np.zeros([self.c_size,self.dim]); self.fe_x = np.zeros([self.c_size,self.dim])
+        self.fs_x = np.zeros([self.c_size,self.dim]); self.fn_x = np.zeros([self.c_size,self.dim])
+        self.fw_n = np.zeros([self.c_size,self.dim]); self.fe_n = np.zeros([self.c_size,self.dim])
+        self.fs_n = np.zeros([self.c_size,self.dim]); self.fn_n = np.zeros([self.c_size,self.dim])
+        self.fw_loc = np.zeros(self.c_size); self.fe_loc = np.zeros(self.c_size)
+        self.fs_loc = np.zeros(self.c_size); self.fn_loc = np.zeros(self.c_size)
         for i in range(self.nx[0]):
             for j in range(self.nx[1]):
                 m = i*self.nx[1] + j
@@ -153,7 +152,7 @@ class MeshCartesian():
                     self.fw_loc[m] = self.geo.location(0.5*(tmp_x0+tmp_x1))
                 
                 self.fw_x[m:m+1,:] = 0.5*(tmp_x0+tmp_x1)
-                self.fw_n[m,:] = torch.tensor([-(tmp_x1[0,1]-tmp_x0[0,1]),tmp_x1[0,0]-tmp_x0[0,0]])
+                self.fw_n[m,:] = np.array([-(tmp_x1[0,1]-tmp_x0[0,1]),tmp_x1[0,0]-tmp_x0[0,0]])
                 self.fw_n[m,:] = self.fw_n[m,:]/((self.fw_n[m,:]**2).sum())**0.5
                 
                 if self.ces_loc[m]==-1 and self.cen_loc[m]==-1:
@@ -166,7 +165,7 @@ class MeshCartesian():
                     self.fe_loc[m] = self.geo.location(0.5*(tmp_x0+tmp_x1))
                 
                 self.fe_x[m:m+1,:] = 0.5*(tmp_x0+tmp_x1)
-                self.fe_n[m,:] = torch.tensor([tmp_x1[0,1]-tmp_x0[0,1],-(tmp_x1[0,0]-tmp_x0[0,0])])
+                self.fe_n[m,:] = np.array([tmp_x1[0,1]-tmp_x0[0,1],-(tmp_x1[0,0]-tmp_x0[0,0])])
                 self.fe_n[m,:] = self.fe_n[m,:]/((self.fe_n[m,:]**2).sum())**0.5
 
                 if self.cws_loc[m]==-1 and self.ces_loc[m]==-1:
@@ -179,7 +178,7 @@ class MeshCartesian():
                     self.fs_loc[m] = self.geo.location(0.5*(tmp_x0+tmp_x1))
                 
                 self.fs_x[m:m+1,:] = 0.5*(tmp_x0+tmp_x1)
-                self.fs_n[m,:] = torch.tensor([tmp_x1[0,1]-tmp_x0[0,1],-(tmp_x1[0,0]-tmp_x0[0,0])])
+                self.fs_n[m,:] = np.array([tmp_x1[0,1]-tmp_x0[0,1],-(tmp_x1[0,0]-tmp_x0[0,0])])
                 self.fs_n[m,:] = self.fs_n[m,:]/((self.fs_n[m,:]**2).sum())**0.5
                 
                 if self.cwn_loc[m]==-1 and self.cen_loc[m]==-1:
@@ -192,15 +191,15 @@ class MeshCartesian():
                     self.fn_loc[m] = self.geo.location(0.5*(tmp_x0+tmp_x1))
                 
                 self.fn_x[m:m+1,:] = 0.5*(tmp_x0+tmp_x1)
-                self.fn_n[m,:] = torch.tensor([-(tmp_x1[0,1]-tmp_x0[0,1]),tmp_x1[0,0]-tmp_x0[0,0]])
+                self.fn_n[m,:] = np.array([-(tmp_x1[0,1]-tmp_x0[0,1]),tmp_x1[0,0]-tmp_x0[0,0]])
                 self.fn_n[m,:] = self.fn_n[m,:]/((self.fn_n[m,:]**2).sum())**0.5    
         
-        self.fws_l = torch.zeros(self.c_size); self.fwn_l = torch.zeros(self.c_size)
-        self.fes_l = torch.zeros(self.c_size); self.fen_l = torch.zeros(self.c_size)
-        self.fws_x = torch.zeros(self.c_size,self.dim); self.fwn_x = torch.zeros(self.c_size,self.dim)
-        self.fes_x = torch.zeros(self.c_size,self.dim); self.fen_x = torch.zeros(self.c_size,self.dim)
-        self.fws_n = torch.zeros(self.c_size,self.dim); self.fwn_n = torch.zeros(self.c_size,self.dim)
-        self.fes_n = torch.zeros(self.c_size,self.dim); self.fen_n = torch.zeros(self.c_size,self.dim)
+        self.fws_l = np.zeros(self.c_size); self.fwn_l = np.zeros(self.c_size)
+        self.fes_l = np.zeros(self.c_size); self.fen_l = np.zeros(self.c_size)
+        self.fws_x = np.zeros([self.c_size,self.dim]); self.fwn_x = np.zeros([self.c_size,self.dim])
+        self.fes_x = np.zeros([self.c_size,self.dim]); self.fen_x = np.zeros([self.c_size,self.dim])
+        self.fws_n = np.zeros([self.c_size,self.dim]); self.fwn_n = np.zeros([self.c_size,self.dim])
+        self.fes_n = np.zeros([self.c_size,self.dim]); self.fen_n = np.zeros([self.c_size,self.dim])
         for i in range(self.nx[0]):
             for j in range(self.nx[1]):
                 m = i*self.nx[1] + j
@@ -208,36 +207,36 @@ class MeshCartesian():
                     continue
 
                 if self.cws_loc[m]==-1 and self.cwn_loc[m]==1 and self.ces_loc[m]==1:
-                    tmp = torch.tensor([self.fs_st[m]*self.hx[0],self.fw_st[m]*self.hx[1]])
+                    tmp = np.array([self.fs_st[m]*self.hx[0],self.fw_st[m]*self.hx[1]])
                     self.fws_l[m] = ((tmp**2).sum())**0.5
-                    self.fws_x[m:m+1,:] = self.cws_x[m:m+1,:] + 0.5*torch.tensor([tmp[0],tmp[1]])
-                    self.fws_n[m,:] = torch.tensor([-tmp[1],-tmp[0]])
+                    self.fws_x[m:m+1,:] = self.cws_x[m:m+1,:] + 0.5*np.array([tmp[0],tmp[1]])
+                    self.fws_n[m,:] = np.array([-tmp[1],-tmp[0]])
                     self.fws_n[m,:] = self.fws_n[m,:]/(((self.fws_n[m,:]**2).sum())**0.5)
                 
                 if self.cwn_loc[m]==-1 and self.cws_loc[m]==1 and self.cen_loc[m]==1:
-                    tmp = torch.tensor([self.fn_st[m]*self.hx[0],(1-self.fw_ed[m])*self.hx[1]])
+                    tmp = np.array([self.fn_st[m]*self.hx[0],(1-self.fw_ed[m])*self.hx[1]])
                     self.fwn_l[m] = (sum(tmp**2))**0.5
-                    self.fwn_x[m:m+1,:] = self.cwn_x[m:m+1,:] + 0.5*torch.tensor([tmp[0],-tmp[1]])
-                    self.fwn_n[m,:] = torch.tensor([-tmp[1],tmp[0]])
+                    self.fwn_x[m:m+1,:] = self.cwn_x[m:m+1,:] + 0.5*np.array([tmp[0],-tmp[1]])
+                    self.fwn_n[m,:] = np.array([-tmp[1],tmp[0]])
                     self.fwn_n[m,:] = self.fwn_n[m,:]/(((self.fwn_n[m,:]**2).sum())**0.5)
                 
                 if self.ces_loc[m]==-1 and self.cen_loc[m]==1 and self.cws_loc[m]==1:
-                    tmp = torch.tensor([(1-self.fs_ed[m])*self.hx[0],self.fe_st[m]*self.hx[1]])
+                    tmp = np.array([(1-self.fs_ed[m])*self.hx[0],self.fe_st[m]*self.hx[1]])
                     self.fes_l[m] = ((tmp**2).sum())**0.5
-                    self.fes_x[m:m+1,:] = self.ces_x[m:m+1,:] + 0.5*torch.tensor([-tmp[0],tmp[1]])
-                    self.fes_n[m,:] = torch.tensor([tmp[1],-tmp[0]])
+                    self.fes_x[m:m+1,:] = self.ces_x[m:m+1,:] + 0.5*np.array([-tmp[0],tmp[1]])
+                    self.fes_n[m,:] = np.array([tmp[1],-tmp[0]])
                     self.fes_n[m,:] = self.fes_n[m,:]/(((self.fes_n[m,:]**2).sum())**0.5)
                 
                 if self.cen_loc[m]==-1 and self.ces_loc[m]==1 and self.cwn_loc[m]==1:
-                    tmp = torch.tensor([(1-self.fn_ed[m])*self.hx[0],(1-self.fe_ed[m])*self.hx[1]])
+                    tmp = np.array([(1-self.fn_ed[m])*self.hx[0],(1-self.fe_ed[m])*self.hx[1]])
                     self.fen_l[m] = ((tmp**2).sum())**0.5
-                    self.fen_x[m:m+1,:] = self.cen_x[m:m+1,:] + 0.5*torch.tensor([-tmp[0],-tmp[1]])
-                    self.fen_n[m,:] = torch.tensor([tmp[1],tmp[0]])
+                    self.fen_x[m:m+1,:] = self.cen_x[m:m+1,:] + 0.5*np.array([-tmp[0],-tmp[1]])
+                    self.fen_n[m,:] = np.array([tmp[1],tmp[0]])
                     self.fen_n[m,:] = self.fen_n[m,:]/(((self.fen_n[m,:]**2).sum())**0.5)
         
         # cell area
         print('Genrating cell area ...')
-        self.c_a = torch.zeros(self.c_size)
+        self.c_a = np.zeros(self.c_size)
         for i in range(self.nx[0]):
             for j in range(self.nx[1]):
                 m = i*self.nx[1] + j
@@ -278,10 +277,10 @@ class MeshNonCartesian():
         self.cen_size = self.nx[0]*self.nx[1]
         self.cor_size = (self.nx[0]+1)*(self.nx[1]+1)
         self.dim = self.bounds.shape[0]
-        self.cen_x = torch.zeros(self.cen_size,self.dim)
-        self.cor_x = torch.zeros(self.cor_size,self.dim)
-        self.cen_y = torch.zeros(self.cen_size,self.dim)
-        self.cor_y = torch.zeros(self.cor_size,self.dim)
+        self.cen_x = np.zeros([self.cen_size,self.dim])
+        self.cor_x = np.zeros([self.cor_size,self.dim])
+        self.cen_y = np.zeros([self.cen_size,self.dim])
+        self.cor_y = np.zeros([self.cor_size,self.dim])
 
         ratio = 1.0 - self.geo.radius * 0.5*2**0.5
         nx0 = [int(np.floor(0.5*ratio*self.nx[0])), int(np.floor(0.5*ratio*self.nx[1]))]
@@ -409,18 +408,31 @@ class MeshNonCartesian():
         ri = nx[0]-j
         rj = i
         return rx, ry, ri, rj
-
+    
+    def get_idx_n_in_c(self, mesh_car):
+        idx_n_in_c = np.zeros(self.cen_size, np.int32)
+        for m in range(self.cen_size):
+            if self.cen_loc[m]!=1:
+                continue
+            
+            dis = ((mesh_car.c_x-self.cen_x[m,:])**2).sum(1,keepdims=True)
+            dis[mesh_car.c_loc!=1] = 10000
+            mm = np.argmin(dis[:,0])
+            idx_n_in_c[m] = mm
+        
+        return idx_n_in_c
+    
     def ball_connectivity(self, r, type='encode'):
-        x = torch.cat([self.cen_x, self.cen_y])
+        x = np.concatenate([self.cen_x, self.cen_y])
         pwd = sklearn.metrics.pairwise_distances(x)
         if type=='encode':
             pwd = pwd[:self.cen_size,self.cen_size:]
-            edge_index = np.where((pwd<=r) & (self.cen_loc.view(-1,1).numpy()!=-1))
+            edge_index = np.where((pwd<=r) & (self.cen_loc.reshape(-1,1)!=-1))
             edge_index = np.vstack(edge_index)
             edge_index[1] = [idx+self.cen_size for idx in edge_index[1]]
         if type=='decode':
             pwd = pwd[self.cen_size:,:self.cen_size]
-            edge_index = np.where((pwd<=r) & (self.cen_loc.numpy()!=-1))
+            edge_index = np.where((pwd<=r) & (self.cen_loc!=-1))
             edge_index = np.vstack(edge_index)
             edge_index[0] = [idx+self.cen_size for idx in edge_index[0]]
-        return torch.tensor(edge_index, dtype=torch.long)
+        return edge_index

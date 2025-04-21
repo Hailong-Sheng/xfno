@@ -39,7 +39,8 @@ class FNO2d(nn.Module):
     """ 2D Fourier neural operator """
     def __init__(self, input_channel: int=1, output_channel: int=1, width: int=32, 
                  mode1_num: int=16, mode2_num: int=16, padding: int=8, layer_num: int=4, 
-                 activation=nn.GELU(), input_scale=None, cord_feat: bool=True) -> None:
+                 activation=nn.GELU(), input_normalizer=None, output_normalizer=None
+                 ) -> None:
         """ initialization
         args:
             input_channel: number of input channels
@@ -50,8 +51,6 @@ class FNO2d(nn.Module):
             padding: padding size
             layer_num: number of Fourier layers
             activation: activation function
-            input_scale: scale of input
-            cord_feat: whether to use coordinate as additional input feature
         """
         super().__init__()
         self.input_channel = input_channel
@@ -62,12 +61,8 @@ class FNO2d(nn.Module):
         self.padding = padding
         self.layer_num = layer_num
         self.activation = activation
-        self.input_scale = input_scale
-        self.cord_feat = cord_feat    
-
-        # add relative coordinate feature
-        if self.cord_feat:
-            self.input_channel += 2
+        self.input_normalizer = input_normalizer
+        self.output_normalizer = output_normalizer
         
         # encoder layer
         self.encoder = nn.Linear(self.input_channel, self.width)
@@ -84,29 +79,15 @@ class FNO2d(nn.Module):
         # decoder layer
         self.decoder = MLPConv2d(self.width, self.output_channel, self.width*4, 1,
                                  self.activation)
-
-    def meshgrid(self, shape, device: torch.device):
-        batch_size, size_x, size_y = shape[0], shape[2], shape[3]
-        grid_x = torch.linspace(0, 1, size_x, dtype=torch.float32, device=device)
-        grid_y = torch.linspace(0, 1, size_y, dtype=torch.float32, device=device)
-        grid_x, grid_y = torch.meshgrid(grid_x, grid_y, indexing="ij")
-        grid_x = grid_x.unsqueeze(0).unsqueeze(0).repeat(batch_size, 1, 1, 1)
-        grid_y = grid_y.unsqueeze(0).unsqueeze(0).repeat(batch_size, 1, 1, 1)
-        return torch.cat((grid_x, grid_y), dim=1)
     
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        assert (
-            x.dim() == 4
-        ), "Only 4D tensors [batch, input_channel, grid_x, grid_y] accepted for 2D FNO"
-
+    def forward(self, x: torch.Tensor, coord: torch.Tensor=None) -> torch.Tensor:
         # normalization
-        if self.input_scale is not None:
-            x = (x - self.input_scale[0]) / self.input_scale[1]
+        if self.input_normalizer is not None:
+            x = self.input_normalizer.encode(x)
         
         # add coordinate feature
-        if self.cord_feat:
-            cord_feat = self.meshgrid(list(x.shape), x.device)
-            x = torch.cat((x, cord_feat), dim=1)
+        if coord is not None:
+            x = torch.cat((x, coord), dim=1)
 
         # encode
         x = x.permute(0, 2, 3, 1)
@@ -114,7 +95,7 @@ class FNO2d(nn.Module):
         x = x.permute(0, 3, 1, 2)
         
         # add padding (left, right, top, bottom)
-        x = F.pad(x, [0,self.padding,0,self.padding])
+        x = F.pad(x, [0,self.padding, 0,self.padding])
 
         # process
         for k, c in enumerate(zip(self.conv_layer, self.spconv_layer)):
@@ -129,21 +110,111 @@ class FNO2d(nn.Module):
 
         # decode
         x = self.decoder(x)
+        
+        # normalization
+        if self.output_normalizer is not None:
+            x = self.output_normalizer.decode(x)
+        
+        return x
+
+class DAFNO2d(nn.Module):
+    """ 2D Fourier neural operator """
+    def __init__(self, input_channel: int=1, output_channel: int=1, width: int=32, 
+                 mode1_num: int=16, mode2_num: int=16, padding: int=8, layer_num: int=4, 
+                 activation=nn.GELU(), input_normalizer=None, output_normalizer=None
+                 ) -> None:
+        """ initialization
+        args:
+            input_channel: number of input channels
+            output_channel: number of output channels
+            width: number of hidden channels
+            mode1_num: number of Fourier modes in the 1th dimension
+            mode2_num: number of Fourier modes in the 2th dimension
+            padding: padding size
+            layer_num: number of Fourier layers
+            activation: activation function
+        """
+        super().__init__()
+        self.input_channel = input_channel
+        self.output_channel = output_channel
+        self.width = width
+        self.mode1_num = mode1_num
+        self.mode2_num = mode2_num
+        self.padding = padding
+        self.layer_num = layer_num
+        self.activation = activation
+        self.input_normalizer = input_normalizer
+        self.output_normalizer = output_normalizer
+        
+        # encoder layer
+        self.encoder = nn.Linear(self.input_channel, self.width)
+        
+        # convolutional layer
+        self.conv_layer = nn.ModuleList()
+        self.spconv_layer = nn.ModuleList()
+        for _ in range(self.layer_num):
+            self.conv_layer.append(nn.Conv2d(self.width, self.width, 1))
+            self.spconv_layer.append(
+                SpectralConv2d(self.width, self.width, self.mode1_num, self.mode2_num)
+            )
+
+        # decoder layer
+        self.decoder = MLPConv2d(self.width, self.output_channel, self.width*4, 1,
+                                 self.activation)
+    
+    def forward(self, x: torch.Tensor, coord: torch.Tensor, schar: torch.Tensor
+                ) -> torch.Tensor:
+        # normalization
+        if self.input_normalizer is not None:
+            x = self.input_normalizer.encode(x)
+        
+        # add coordinate feature
+        x = torch.cat((x, coord), dim=1)
+
+        # encode
+        x = x.permute(0, 2, 3, 1)
+        x = self.encoder(x)
+        x = x.permute(0, 3, 1, 2)
+
+        # add padding (left, right, top, bottom)
+        x = F.pad(x, [0,self.padding, 0,self.padding])
+        s = F.pad(schar, [0,self.padding, 0,self.padding])
+
+        s = s.expand(s.shape[0], self.width, s.shape[2], s.shape[3])
+        
+        # process
+        for k, c in enumerate(zip(self.conv_layer, self.spconv_layer)):
+            conv, spconv = c
+            x = s * (spconv(s*x) - x*spconv(s) + conv(x))
+            
+            if k < self.layer_num-1:
+                x = self.activation(x)
+
+        # remove padding
+        x = x[..., :-self.padding, :-self.padding]
+
+        # decode
+        x = self.decoder(x)
+        
+        # normalization
+        if self.output_normalizer is not None:
+            x = self.output_normalizer.decode(x)
+        
         return x
 
 class FixedConv2D(nn.Module):
     def __init__(self):
         super(FixedConv2D, self).__init__()
         self.input_channel = 1
-        self.ou_channel = 3**2
+        self.output_channel = 3**2
         self.kernel_size = 3
         self.padding = 1
 
-        self.conv = nn.Conv2d(self.input_channel, self.ou_channel,
+        self.conv = nn.Conv2d(self.input_channel, self.output_channel,
             kernel_size=self.kernel_size, padding=self.padding)
         
-        self.conv.weight.data = torch.zeros(self.ou_channel,1,3,3)
-        self.conv.bias.data = torch.zeros(self.ou_channel)
+        self.conv.weight.data = torch.zeros(self.output_channel,1,3,3)
+        self.conv.bias.data = torch.zeros(self.output_channel)
         for i in range(3):
             for j in range(3):
                 m = i*3 + j
@@ -181,19 +252,20 @@ class GNO(torch.nn.Module):
                              self.edge_hidden_dim, layer_num=2)
         self.conv = GraphConv(self.node_hidden_dim, self.node_hidden_dim, aggr='mean')
         self.node_proj_2 = torch.nn.Linear(self.node_hidden_dim, self.node_output_dim)
-
+    
     def forward(self, data: PygData) -> torch.Tensor:
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         x = self.node_proj_1(x)
         edge_attr = self.edge_proj(edge_attr)
         for _ in range(self.layer_num):
-            x = F.relu(self.conv(x, edge_index, edge_attr))
+            x = F.gelu(self.conv(x, edge_index, edge_attr))
         x = self.node_proj_2(x)
         return x
 
 class GINO(torch.nn.Module):
     """ geometry infromed neural operator """
-    def __init__(self, encoder, processer, decoder, input_scale, c_size, r_size, nx):
+    def __init__(self, encoder, processer, decoder, c_size, r_size, nx,
+                 input_normalizer, output_normalizer):
         """ initialization
         args:
             encoder: encoder
@@ -208,18 +280,20 @@ class GINO(torch.nn.Module):
         self.encoder = encoder
         self.processer = processer
         self.decoder = decoder
-        self.input_scale = input_scale
         self.c_size = c_size
         self.r_size = r_size
         self.nx = nx
+        self.input_normalizer = input_normalizer
+        self.output_normalizer = output_normalizer
 
     def forward(self, graph: PygData) -> torch.Tensor:
         graph = copy.deepcopy(graph)
-
-        # normalize
-        batch_size = int(graph.x.shape[0]/(self.c_size+self.r_size))
-        graph.x = (graph.x-self.input_scale[0]) / self.input_scale[1]
-
+        batch_size = len(graph.ptr)-1
+        
+        # normalization
+        if self.input_normalizer is not None:
+            graph.x = self.input_normalizer.encode(graph.x)
+            
         # encode
         x = self.encoder(graph)
         
@@ -245,5 +319,9 @@ class GINO(torch.nn.Module):
         x = x.reshape(batch_size,self.c_size+self.r_size)
         x = x[:,:self.c_size]
         x = x.reshape(graph.y.shape)
+
+        # normalization
+        if self.output_normalizer is not None:
+            x = self.output_normalizer.decode(x)
 
         return x
